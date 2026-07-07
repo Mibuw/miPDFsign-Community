@@ -128,6 +128,29 @@ has expired:
 
 ---
 
+## Configuration (`App.config`)
+
+Behaviour is controlled via `App.config` in the install folder. Key settings:
+
+| Key | Default | Purpose |
+|---|---|---|
+| `SaveAsDialog` | `true` | `true` = show a "Save As" dialog after signing; `false` = save directly into `TargetDirectory`. |
+| `TargetDirectory` | *(empty)* | Destination folder when `SaveAsDialog=false` (created if needed; empty = the source document's folder). Environment variables are expanded. |
+| `UseTimestamp` | `true` | Enable/disable **RFC-3161 timestamping** (see below). |
+| `TimestampServers` | *(built-in)* | `;`-separated list of TSA URLs, tried in order. Empty = built-in defaults (GlobalSign, Sectigo, Entrust). A-Trust example: `http://tsa.a-trust.at/tsa`. |
+| `BiometricCertPath` / `BiometricCertPassword` | *(empty)* | PFX used to encrypt the biometric data. Empty = auto-generate `<DocumentName>_bioCert.pfx` next to the signed document. |
+| `LogFile`, `LogLevel`, `LogRolling`, … | see file | Logging: path, level (`DEBUG`/`INFO`/`WARN`/`ERROR`), daily rolling. |
+| `ForcePortraitOrientation` | `true` | Rotate the tablet screen to portrait on start and restore it on exit. |
+
+### Disabling timestamping
+
+Set **`UseTimestamp=false`** for **offline / air-gapped** deployments or when no TSA is reachable. Then:
+
+- signatures stay **PAdES Baseline-B** (no Baseline-T timestamp) and **no LTA** archive timestamp is added — LTV/DSS (CRL/OCSP) is unaffected;
+- ⚠️ the **FES** signing certificate is only valid for **10 minutes**, so without a timestamp its signatures are **not provable long-term**. Disable timestamping only deliberately (e.g. for QES, where the qualified certificate carries its own trust).
+
+---
+
 ## Build & Deployment
 
 ```bash

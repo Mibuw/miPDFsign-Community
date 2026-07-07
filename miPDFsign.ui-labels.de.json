@@ -4,8 +4,8 @@
   // Fehlende Keys fallen auf die eingebauten Standardwerte zurück (englisch).
 
   // ── Titelleiste ───────────────────────────────────────────────────
-  "AppTitle":           "miPDFsign",
-  "TitleBarFormat":     "miPDFsign  –  {0}",
+  "AppTitle":           "miPDFsign Community",
+  "TitleBarFormat":     "miPDFsign Community  –  {0}",
 
   // ── Toolbar-Buttons ───────────────────────────────────────────────
   "BtnPrev":            "◀",

@@ -1,18 +1,21 @@
-#define MyAppName      "miPDFsign"
-#define MyAppVersion   "1.4.0"
+#define MyAppName      "miPDFsign Community"
+#define MyAppVersion   "1.0.0"
 #define MyAppPublisher "Wolfgang Mitterbucher"
-#define MyAppExeName   "miPDFsign.exe"
+#define MyAppExeName   "miPDFsignCommunity.exe"
 #define MyPublishDir   "publish"
 
 [Setup]
-AppId                   = {{79631395-9E05-41C0-9C12-01B55F29F613}
+; Own AppId + own install dir + own group → installs SIDE-BY-SIDE with the
+; commercial miPDFsign edition (which uses a different AppId and folder).
+AppId                   = {{3B528384-34AC-47C4-B477-AA742872F4E3}
 AppName                 = {#MyAppName}
 AppVersion              = {#MyAppVersion}
 AppVerName              = {#MyAppName} {#MyAppVersion}
 AppPublisher            = {#MyAppPublisher}
 AppCopyright            = Copyright (C) {#MyAppPublisher}
 
-; x86 install – goes to C:\Program Files (x86)\miPDF\miPDFsign
+; x86 install – goes to C:\Program Files (x86)\miPDF\miPDFsign Community
+; (distinct from the commercial edition's ...\miPDF\miPDFsign folder → parallel install)
 DefaultDirName          = {autopf32}\miPDF\{#MyAppName}
 DefaultGroupName        = {#MyAppName}
 ArchitecturesAllowed    = x86 x64
@@ -20,7 +23,7 @@ ArchitecturesInstallIn64BitMode =
 
 ; Output
 OutputDir               = output
-OutputBaseFilename      = miPDFsign_Setup_{#MyAppVersion}
+OutputBaseFilename      = miPDFsignCommunity_Setup_{#MyAppVersion}
 SetupIconFile           = ..\Assets\miPDFsign.ico
 Compression             = lzma2/ultra64
 SolidCompression        = yes
@@ -52,7 +55,7 @@ Name: "german";  MessagesFile: "compiler:Languages\German.isl"
 
 [Messages]
 ; Shown on the first page of the installer
-BeveledLabel=miPDFsign
+BeveledLabel=miPDFsign Community
 
 [Tasks]
 Name: "desktopicon"; \

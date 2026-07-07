@@ -173,7 +173,7 @@
                        SnapsToDevicePixels="True"/>
 
                 <TextBlock x:Name="TitleText"
-                           Text="miPDFsign"
+                           Text="miPDFsign Community"
                            Foreground="#1C1C1E" FontSize="14"
                            VerticalAlignment="Center" Margin="48,0,144,0"/>
 

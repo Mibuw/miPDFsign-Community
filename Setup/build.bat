@@ -6,13 +6,13 @@ set PROJECT_DIR=%~dp0..
 set SETUP_DIR=%~dp0
 
 echo ============================================
-echo  miPDFsign – Build and Installer
+echo  miPDFsign Community – Build and Installer
 echo ============================================
 echo.
 
 :: ── 1. Publish ──────────────────────────────────────────────────────────────
 echo [1/2] Publishing application (self-contained x86)...
-dotnet publish "%PROJECT_DIR%\miPDFsign.csproj" ^
+dotnet publish "%PROJECT_DIR%\miPDFsignCommunity.csproj" ^
     /p:PublishProfile=Release ^
     -c Release ^
     --nologo
@@ -38,7 +38,7 @@ if not exist %ISCC% (
     exit /b 1
 )
 
-%ISCC% "%SETUP_DIR%miPDFsign.iss"
+%ISCC% "%SETUP_DIR%miPDFsignCommunity.iss"
 
 if errorlevel 1 (
     echo.
@@ -50,6 +50,6 @@ if errorlevel 1 (
 echo.
 echo ============================================
 echo  Done!
-echo  Installer: Setup\output\miPDFsign_Setup_1.4.0.exe
+echo  Installer: Setup\output\miPDFsignCommunity_Setup_1.0.0.exe
 echo ============================================
 pause

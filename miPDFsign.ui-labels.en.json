@@ -4,8 +4,8 @@
   // Any missing key falls back to the built-in English defaults.
 
   // ── Title bar ─────────────────────────────────────────────────────
-  "AppTitle":           "miPDFsign",
-  "TitleBarFormat":     "miPDFsign  –  {0}",
+  "AppTitle":           "miPDFsign Community",
+  "TitleBarFormat":     "miPDFsign Community  –  {0}",
 
   // ── Toolbar buttons ───────────────────────────────────────────────
   "BtnPrev":            "◀",

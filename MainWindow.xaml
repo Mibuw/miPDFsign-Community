@@ -1,0 +1,378 @@
+<Window x:Class="miPDFsign.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="miPDFsign"
+        Background="#F2F2F7"
+        WindowStyle="None"
+        AllowsTransparency="False"
+        ResizeMode="CanMinimize"
+        WindowState="Maximized"
+        Stylus.IsPressAndHoldEnabled="False"
+        Stylus.IsFlicksEnabled="False"
+        Stylus.IsTapFeedbackEnabled="False"
+        Stylus.IsTouchFeedbackEnabled="False">
+
+    <!--
+        Layout optimised for 1080x1920 @ 150 % DPI (portrait).
+        Logical viewport: 720 x 1280 WPF units.
+
+        Rows:
+          0  – title bar          48 px
+          1  – PDF content        *
+          2  – toolbar            88 px
+    -->
+
+    <Window.Resources>
+
+        <!-- ── Shared button template ────────────────────────────── -->
+        <ControlTemplate x:Key="BtnTemplate" TargetType="Button">
+            <Border x:Name="Bd"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="8"
+                    Padding="{TemplateBinding Padding}">
+                <ContentPresenter HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Bd" Property="Opacity" Value="0.85"/>
+                </Trigger>
+                <Trigger Property="IsPressed" Value="True">
+                    <Setter TargetName="Bd" Property="Opacity"      Value="0.70"/>
+                    <Setter TargetName="Bd" Property="BorderBrush"  Value="#CDD6F4"/>
+                    <Setter TargetName="Bd" Property="BorderThickness" Value="2"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.35"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <!-- ── Navigation button (◀ ▶) ──────────────────────────── -->
+        <Style x:Key="NavBtn" TargetType="Button">
+            <Setter Property="Background"      Value="#FFFFFF"/>
+            <Setter Property="Foreground"      Value="#1C1C1E"/>
+            <Setter Property="BorderBrush"     Value="#C7C7CC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize"        Value="17"/>
+            <Setter Property="Width"           Value="48"/>
+            <Setter Property="Height"          Value="48"/>
+            <Setter Property="Padding"         Value="0"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template"        Value="{StaticResource BtnTemplate}"/>
+        </Style>
+
+        <!-- ── Default tool button ───────────────────────────────── -->
+        <Style x:Key="ToolBtn" TargetType="Button">
+            <Setter Property="Background"      Value="#FFFFFF"/>
+            <Setter Property="Foreground"      Value="#1C1C1E"/>
+            <Setter Property="BorderBrush"     Value="#C7C7CC"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize"        Value="13"/>
+            <Setter Property="Height"          Value="48"/>
+            <Setter Property="Padding"         Value="16,0"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template"        Value="{StaticResource BtnTemplate}"/>
+        </Style>
+
+        <!-- ── Danger button (clear inputs) ──────────────────── -->
+        <Style x:Key="DangerBtn" TargetType="Button" BasedOn="{StaticResource ToolBtn}">
+            <Setter Property="Background"  Value="#FFF5F5"/>
+            <Setter Property="BorderBrush" Value="#FFBDBD"/>
+            <Setter Property="Foreground"  Value="#C0392B"/>
+        </Style>
+
+        <!-- ── Accent button (Save) ─────────────────────────── -->
+        <Style x:Key="AccentBtn" TargetType="Button" BasedOn="{StaticResource ToolBtn}">
+            <Setter Property="Background"  Value="#F0FFF4"/>
+            <Setter Property="BorderBrush" Value="#82C99A"/>
+            <Setter Property="Foreground"  Value="#1A6B3A"/>
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+        </Style>
+
+        <!-- ── Window-control button template (Minimize / Maximize / Close) ── -->
+        <Style x:Key="WinCtrlBtn" TargetType="Button">
+            <Setter Property="Width"           Value="46"/>
+            <Setter Property="Height"          Value="48"/>
+            <Setter Property="Background"      Value="Transparent"/>
+            <Setter Property="Foreground"      Value="#8E8E93"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontSize"        Value="15"/>
+            <Setter Property="Cursor"          Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#E5E5EA"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#D1D1D6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Close button gets a red hover -->
+        <Style x:Key="CloseBtn" TargetType="Button" BasedOn="{StaticResource WinCtrlBtn}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FF3B30"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#CC2020"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="48"/>   <!-- title bar -->
+            <RowDefinition Height="*"/>    <!-- PDF content -->
+            <RowDefinition Height="88"/>   <!-- toolbar -->
+        </Grid.RowDefinitions>
+
+        <!-- ════════════════════════════════════════════════════════
+             Row 0 – Title bar (drag handle)
+             ════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="0" Background="#FFFFFF"
+                BorderBrush="#D1D1D6" BorderThickness="0,0,0,1"
+                MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
+            <Grid>
+                <!-- App logo (top-left) -->
+                <Image Source="/Assets/miPDFsign_logo.png"
+                       Width="24" Height="24"
+                       HorizontalAlignment="Left" VerticalAlignment="Center"
+                       Margin="14,0,0,0"
+                       RenderOptions.BitmapScalingMode="HighQuality"
+                       SnapsToDevicePixels="True"/>
+
+                <TextBlock x:Name="TitleText"
+                           Text="miPDFsign"
+                           Foreground="#1C1C1E" FontSize="14"
+                           VerticalAlignment="Center" Margin="48,0,144,0"/>
+
+
+                <!-- Window controls: Minimize · Maximize/Restore · Close -->
+                <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+
+                    <Button x:Name="BtnMinimize"
+                            Content="─" Style="{StaticResource WinCtrlBtn}"
+                            Click="MinimizeBtn_Click"
+                            ToolTip="Minimize"/>
+
+                    <Button x:Name="BtnMaximizeRestore"
+                            Content="□" Style="{StaticResource WinCtrlBtn}"
+                            Click="MaximizeRestoreBtn_Click"
+                            ToolTip="Maximize / Restore"/>
+
+                    <Button Content="✕" Style="{StaticResource CloseBtn}"
+                            Click="CloseBtn_Click"
+                            ToolTip="Close"/>
+
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ════════════════════════════════════════════════════════
+             Row 1 – PDF viewport
+             Manual zoom via LayoutTransform (ScaleTransform) on
+             PageContainer.  Both scroll bars appear automatically
+             when content exceeds the viewport.
+             ════════════════════════════════════════════════════════ -->
+        <ScrollViewer Grid.Row="1"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Auto"
+                      Background="#E5E5EA"
+                      x:Name="Scroll"
+                      PanningMode="None">
+            <!-- Centering wrapper: centres horizontally; content starts at top for continuous scroll -->
+            <Grid HorizontalAlignment="Center" VerticalAlignment="Top">
+
+                <!-- PageContainer: sized to rendered bitmap pixels.
+                     LayoutTransform (ScaleTransform) is applied by code-behind.
+                     All overlays sit inside here. -->
+                <Grid x:Name="PageContainer" ClipToBounds="True">
+
+                    <!-- 1. PDF page bitmaps – all pages stacked vertically; populated by InitAllPages() -->
+                    <StackPanel x:Name="PageImageStack"
+                                Orientation="Vertical"
+                                HorizontalAlignment="Left"
+                                IsHitTestVisible="False"/>
+
+                    <!-- 2. Checkbox / date / field overlays -->
+                    <Canvas x:Name="CheckboxCanvas" IsHitTestVisible="False"/>
+
+                    <!-- 3. Live-preview polyline (current stroke) -->
+                    <Canvas x:Name="PreviewCanvas" IsHitTestVisible="False"/>
+
+                    <!-- 4. Ink strokes – native InkCanvas (EditingMode toggled in code-behind). -->
+                    <InkCanvas x:Name="InkOverlay"
+                               Background="Transparent"
+                               IsHitTestVisible="False"
+                               EditingMode="None"/>
+
+                    <!-- 5. Signature-field action buttons. -->
+                    <Canvas x:Name="SigButtonCanvas"/>
+                </Grid>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- ════════════════════════════════════════════════════════
+             Row 2 – Toolbar
+             ════════════════════════════════════════════════════════ -->
+        <Border Grid.Row="2" Background="#FFFFFF"
+                BorderBrush="#D1D1D6" BorderThickness="0,1,0,0">
+            <Grid Margin="14,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>  <!-- navigation -->
+                    <ColumnDefinition Width="*"/>     <!-- status     -->
+                    <ColumnDefinition Width="Auto"/>  <!-- tools      -->
+                </Grid.ColumnDefinitions>
+
+                <!-- ── Navigation + Zoom ──────────────────────────── -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="0,0,10,0">
+
+                    <Button x:Name="BtnPrev"
+                            Style="{StaticResource NavBtn}"
+                            Click="BtnPrev_Click"
+                            Content="◀"
+                            Margin="0,0,6,0"/>
+
+                    <Border Background="#F2F2F7" CornerRadius="6"
+                            BorderBrush="#C7C7CC" BorderThickness="1"
+                            Padding="12,0" MinWidth="80"
+                            VerticalAlignment="Center" Height="36">
+                        <TextBlock x:Name="TbPage"
+                                   Foreground="#1C1C1E" FontSize="13"
+                                   VerticalAlignment="Center"
+                                   HorizontalAlignment="Center"
+                                   TextAlignment="Center"/>
+                    </Border>
+
+                    <Button x:Name="BtnNext"
+                            Style="{StaticResource NavBtn}"
+                            Click="BtnNext_Click"
+                            Content="▶"
+                            Margin="6,0,0,0"/>
+
+                    <!-- Divider -->
+                    <Rectangle Width="1" Height="30" Fill="#D1D1D6"
+                               VerticalAlignment="Center" Margin="10,0,8,0"/>
+
+                    <!-- Zoom out -->
+                    <Button x:Name="BtnZoomOut"
+                            Style="{StaticResource NavBtn}"
+                            Click="BtnZoomOut_Click"
+                            Content="−"
+                            ToolTip="Zoom out"
+                            Margin="0,0,3,0"/>
+
+                    <!-- Zoom level label -->
+                    <TextBlock x:Name="TbZoom"
+                               Text="100%"
+                               Width="44"
+                               TextAlignment="Center"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Foreground="#3C3C43"/>
+
+                    <!-- Zoom in -->
+                    <Button x:Name="BtnZoomIn"
+                            Style="{StaticResource NavBtn}"
+                            Click="BtnZoomIn_Click"
+                            Content="+"
+                            ToolTip="Zoom in"
+                            Margin="3,0,0,0"/>
+                </StackPanel>
+
+                <!-- ── Status ─────────────────────────────────────── -->
+                <Border Grid.Column="1"
+                        Background="#F2F2F7"
+                        BorderBrush="#C7C7CC" BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="14,0"
+                        Height="36"
+                        VerticalAlignment="Center"
+                        Margin="4,0">
+                    <TextBlock x:Name="TbStatus"
+                               Foreground="#3C3C43"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="NoWrap"
+                               TextTrimming="CharacterEllipsis"
+                               Text="Loading document …"/>
+                </Border>
+
+                <!-- ── Tools ──────────────────────────────────────── -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="10,0,0,0">
+
+                    <Button x:Name="BtnNextSig"
+                            Style="{StaticResource ToolBtn}"
+                            Click="BtnNextSig_Click"
+                            Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="BtnNextSigIconText" Text="✍" FontSize="15"
+                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="BtnNextSigLabelText" Text="Next signature"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="BtnClear"
+                            Style="{StaticResource DangerBtn}"
+                            Click="BtnClearPage_Click"
+                            Margin="0,0,6,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="BtnClearIconText" Text="✕" FontSize="13"
+                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBlock x:Name="BtnClearLabelText" Text="Delete"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button x:Name="BtnSave"
+                            Style="{StaticResource AccentBtn}"
+                            Click="BtnSave_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="BtnSaveIconText" Text="💾" FontSize="14"
+                                       VerticalAlignment="Center" Margin="0,0,7,0"/>
+                            <TextBlock x:Name="BtnSaveLabelText" Text="Save"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+    </Grid>
+</Window>

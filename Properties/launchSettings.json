@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "miPDFsign": {
+      "commandName": "Project",
+      "commandLineArgs": "\"\""
+    }
+  }
+}

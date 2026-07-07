@@ -1,0 +1,81 @@
+{
+  // miPDFsign UI-Texte – Deutsch
+  // Dieses File kann ohne Neucompilierung angepasst werden.
+  // Fehlende Keys fallen auf die eingebauten Standardwerte zurück (englisch).
+
+  // ── Titelleiste ───────────────────────────────────────────────────
+  "AppTitle":           "miPDFsign",
+  "TitleBarFormat":     "miPDFsign  –  {0}",
+
+  // ── Toolbar-Buttons ───────────────────────────────────────────────
+  "BtnPrev":            "◀",
+  "BtnNext":            "▶",
+  "BtnClose":           "✕",
+
+  "BtnNextSigIcon":     "✍",
+  "BtnNextSig":         "Nächste Signatur",
+
+  "BtnClearIcon":       "✕",
+  "BtnClear":           "Löschen",
+
+  "BtnSaveIcon":        "💾",
+  "BtnSave":            "Speichern",
+
+  // ── Statuszeile ───────────────────────────────────────────────────
+  "StatusLoading":               "⏳  Lade Dokument …",
+  "StatusSaving":                "⏳  Wird gespeichert …",
+  "StatusSavedFormat":           "✓  {0}",
+  "SaveDialogTitle":             "Signiertes Dokument speichern unter",
+  "SaveDialogFilter":            "PDF-Dokument (*.pdf)|*.pdf",
+  "StatusMissingRequired1":      "⚠  1 Pflichtfeld noch nicht signiert",
+  "StatusMissingRequiredN":      "⚠  {0} Pflichtfelder noch nicht signiert",
+  "StatusFreehandHint":          "Bitte auf dem Dokument unterschreiben",
+  "StatusQesAborted":            "ID-Austria Signatur abgebrochen.",
+  "StatusQesAddingTimestamp":    "Signatur-Zeitstempel wird hinzugefügt…",
+  "StatusQesFetchingRevocation": "Revokierungsdaten werden abgefragt…",
+  "StatusQesAddingArchive":      "Archiv-Zeitstempel wird erstellt…",
+
+  // ── ID-Austria Fenster ────────────────────────────────────────────
+  "IdAustriaWindowTitle":     "ID-Austria Signatur",
+  "IdAustriaInstruction":     "Bitte mit ID-Austria in der folgenden Ansicht unterschreiben.",
+  "IdAustriaConnecting":      "Verbinde mit A-Trust…",
+  "IdAustriaSubmitting":      "Formulardaten werden übermittelt…",
+  "IdAustriaProcessing":      "Signatur wird verarbeitet…",
+  "IdAustriaSuccess":         "✓ Signatur erfolgreich – Dokument wird gespeichert…",
+  "IdAustriaUrlOpened":       "Geöffnet: {0}",
+  "IdAustriaStartError":      "Fehler beim Starten der ID-Austria Signatur:\n{0}",
+  "IdAustriaStartErrorTitle": "ID-Austria Fehler",
+  "IdAustriaParseError":      "Die Signaturantwort konnte nicht gelesen werden.",
+  "IdAustriaDecodeError":     "CMS-Signatur konnte nicht dekodiert werden.",
+  "IdAustriaErrorCode":       "A-Trust Fehlercode: {0}",
+  "IdAustriaNotRecognized":   "Die ID-Austria Signatur wurde nicht erkannt.\n{0}",
+  "IdAustriaNoSignature":     "Kein CMSSignature-Element in der Antwort gefunden.",
+  "IdAustriaErrorPrefix":     "✗ {0}",
+  "IdAustriaBtnCancel":       "Abbrechen",
+
+  // ── Signaturtyp-Dialog ────────────────────────────────────────────
+  "DlgSigTypeTitle":        "Signaturtyp wählen",
+  "DlgSigTypeHeader":       "Signaturtyp wählen",
+  "DlgSigTypeQesTitle":     "ID-Austria (QES)",
+  "DlgSigTypeQesSub":       "Qualifizierte Elektronische Signatur via A-Trust Security Layer",
+  "DlgSigTypeFesTitle":     "Selbstsigniert (FES)",
+  "DlgSigTypeFesSub":       "Fortgeschrittene Signatur mit selbstsigniertem Zertifikat",
+  "DlgSigTypeFesNameLabel": "Name des Unterzeichners:",
+  "DlgSigTypeBtnCancel":    "Abbrechen",
+  "DlgSigTypeBtnOk":        "Weiter  →",
+
+  // ── Signaturfeld-Overlays ─────────────────────────────────────────
+  "SigLabelActive":     "✎  Jetzt unterschreiben",
+  "SigBtnSign":         "✎  Unterschreiben",
+  "SigBtnConfirm":      "✓  Fertig",
+  "SigBtnRetry":        "↺  Nochmal",
+  "SigBtnCancel":       "✕  Abbrechen",
+
+  // ── Fehlermeldungen ───────────────────────────────────────────────
+  "MsgLoadError":           "PDF konnte nicht geladen werden:\n{0}",
+  "MsgLoadErrorTitle":      "Fehler",
+  "MsgMissingFields":       "Folgende Pflichtfelder wurden noch nicht signiert:\n{0}",
+  "MsgMissingFieldsTitle":  "Pflichtfelder fehlen",
+  "MsgSaveError":           "Fehler beim Speichern:\n{0}",
+  "MsgSaveErrorTitle":      "Fehler"
+}

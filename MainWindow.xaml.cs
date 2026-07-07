@@ -1471,8 +1471,9 @@ namespace miPDFsign
             // Sign into a temporary working file first; ask for the final location only AFTER
             // signing succeeds (so the QES/ID-Austria flow runs before the "Save As" prompt).
             string outDir       = Path.GetDirectoryName(_pdfPath)!;
+            string docBaseName  = Path.GetFileNameWithoutExtension(_pdfPath);
             string tempWorkPath = Path.Combine(Path.GetTempPath(),
-                "miPDFsign_" + Path.GetFileNameWithoutExtension(_pdfPath) + "_signing.pdf");
+                "miPDFsign_" + docBaseName + "_signing.pdf");
             string outPath      = tempWorkPath;   // pipeline writes here; set to the chosen path after Save-As
 
             // ── Lock UI ───────────────────────────────────────────────
@@ -1539,10 +1540,13 @@ namespace miPDFsign
 
                         string name   = signerName;
                         var    fields = fieldsToSign;
+                        // Encrypt biometric data with the persistent biometric key (same as QES)
+                        // so it stays decryptable — NOT with the ephemeral 10-minute signing key.
+                        var bioKey = BiometricCertManager.GetEncryptionPublicKey(outDir, docBaseName);
                         // SignFields returns the CMS bytes directly — avoids re-reading and
                         // re-parsing the PDF (ExtractLastCmsBytes was fragile: it matched
                         // wrong /Contents entries in PDFs with pre-existing page content streams).
-                        byte[] fesCms = await Task.Run(() => PdfCertSigner.SignFields(outPath, name, fields, certPair));
+                        byte[] fesCms = await Task.Run(() => PdfCertSigner.SignFields(outPath, name, fields, certPair, bioKey));
 
                         // PAdES-LT: embed DSS (self-signed cert has no CRL/OCSP, but
                         // TSA cert chain from signature-time-stamp is still embedded)
@@ -1563,7 +1567,7 @@ namespace miPDFsign
                     if (fieldsToSign.Count > 0)
                     {
                         // Get biometric encryption key (auto-generates PFX if not configured)
-                        var bioKey = BiometricCertManager.GetEncryptionPublicKey(outDir);
+                        var bioKey = BiometricCertManager.GetEncryptionPublicKey(outDir, docBaseName);
                         var rng    = new Org.BouncyCastle.Security.SecureRandom();
 
                         // Collect all biometric points across all fields

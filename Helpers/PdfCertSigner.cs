@@ -223,7 +223,8 @@ namespace miPDFsign.Helpers
             string pdfPath,
             string signerName,
             IReadOnlyList<FieldSignRequest> fields,
-            CertPair certPair)
+            CertPair certPair,
+            RsaKeyParameters? bioEncryptionKey = null)
         {
             if (fields.Count == 0) return Array.Empty<byte>();
             AppLogger.Info($"PdfCertSigner.SignFields: signing {fields.Count} field(s) in '{SysPath.GetFileName(pdfPath)}'");
@@ -234,7 +235,7 @@ namespace miPDFsign.Helpers
             foreach (var req in fields)
             {
                 AppLogger.Info($"  Signing field '{req.FieldName}' (page {req.PageNum}, bio points: {req.BioPoints.Count})");
-                lastCms = SignFieldIncremental(pdfPath, req, certPair.KeyPair, certPair.Cert);
+                lastCms = SignFieldIncremental(pdfPath, req, certPair.KeyPair, certPair.Cert, bioEncryptionKey);
                 AppLogger.Info($"  Field '{req.FieldName}' signed successfully");
             }
 
@@ -407,14 +408,18 @@ namespace miPDFsign.Helpers
             string pdfPath,
             FieldSignRequest req,
             AsymmetricCipherKeyPair keyPair,
-            BcX509Certificate cert)
+            BcX509Certificate cert,
+            RsaKeyParameters? bioEncryptionKey = null)
         {
             AppLogger.Debug($"    SignFieldIncremental: field='{req.FieldName}' " +
                 $"page={req.PageNum} rect=({req.PdfX:F0},{req.PdfY:F0},{req.PdfW:F0},{req.PdfH:F0})");
 
             var random = new SecureRandom();
             byte[] rawBio = SerializeBioData(req.BioPoints);
-            byte[] encBio = HybridEncrypt(rawBio, (RsaKeyParameters)keyPair.Public, random);
+            // Encrypt the biometric data with the dedicated persistent biometric key when
+            // supplied (so it can be decrypted later); fall back to the signing key otherwise.
+            var bioPubKey = bioEncryptionKey ?? (RsaKeyParameters)keyPair.Public;
+            byte[] encBio = HybridEncrypt(rawBio, bioPubKey, random);
             AppLogger.Info($"    Biometric data: {req.BioPoints.Count} point(s), {rawBio.Length}B raw, {encBio.Length}B encrypted");
 
             var container = new PadesCmsContainer(keyPair.Private, cert, encBio, random);

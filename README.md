@@ -82,6 +82,23 @@ SHA-256). Signature images are drawn into the appearance as transparent vector s
 | LT (LTV) | CRL + OCSP embedded for all certificates (DSS) |
 | LTA | Document timestamp over the entire PDF |
 
+### Biometric data & key
+
+The captured ink (X/Y coordinates, pen pressure, timing) is hybrid-encrypted
+(RSA-OAEP 3072-bit + AES-256-CBC) and embedded in the signature CMS as a signed
+attribute. **Both** signature types (FES and QES) encrypt it with the **same
+dedicated, persistent biometric certificate** — never with the short-lived signing
+certificate — so the biometric data stays recoverable after the signing certificate
+has expired:
+
+- If `BiometricCertPath` (`App.config`) points to a PFX, that certificate is used.
+- Otherwise a fresh RSA-3072 certificate is generated once and stored next to the
+  document as **`<DocumentName>_bioCert.pfx`**.
+
+> ⚠️ **Keep this PFX safe.** Its private key is required to later decrypt/verify the
+> biometric data (forensic use via `ExtractBiometricData`). Losing it makes the
+> encrypted biometric data unrecoverable.
+
 > For implementation details, coordinate conversion, TSA configuration, and
 > migration history, see [`CLAUDE.md`](./CLAUDE.md).
 

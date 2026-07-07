@@ -42,9 +42,10 @@ namespace miPDFsign.Helpers
         /// Returns the RSA public key used to encrypt biometric data.
         /// Generates and caches a key pair if needed.
         /// </summary>
-        public static RsaKeyParameters GetEncryptionPublicKey(string? outputPdfDir = null)
+        public static RsaKeyParameters GetEncryptionPublicKey(
+            string? outputPdfDir = null, string? docBaseName = null)
         {
-            EnsureKeyPair(outputPdfDir);
+            EnsureKeyPair(outputPdfDir, docBaseName);
             return (RsaKeyParameters)_keyPair!.Public;
         }
 
@@ -61,7 +62,7 @@ namespace miPDFsign.Helpers
         //  Internal
         // ----------------------------------------------------------------
 
-        private static void EnsureKeyPair(string? outputPdfDir)
+        private static void EnsureKeyPair(string? outputPdfDir, string? docBaseName)
         {
             lock (_lock)
             {
@@ -77,7 +78,7 @@ namespace miPDFsign.Helpers
                 }
                 else
                 {
-                    GenerateAndSave(outputPdfDir);
+                    GenerateAndSave(outputPdfDir, docBaseName);
                 }
             }
         }
@@ -103,7 +104,7 @@ namespace miPDFsign.Helpers
                 DotNetUtilities.GetRsaKeyPair(rsaParams).Private);
         }
 
-        private static void GenerateAndSave(string? outputPdfDir)
+        private static void GenerateAndSave(string? outputPdfDir, string? docBaseName)
         {
             AppLogger.Info("BiometricCertManager: no cert configured – generating RSA-3072 self-signed cert");
 
@@ -134,7 +135,16 @@ namespace miPDFsign.Helpers
                 ? outputPdfDir
                 : AppDomain.CurrentDomain.BaseDirectory;
 
-            string pfxPath = Path.Combine(saveDir, "biometric_key.pfx");
+            // Name the PFX after the document (e.g. "Invoice_bioCert.pfx") so the biometric
+            // key is paired with the signed document; fall back to a generic name if unknown.
+            string safeBase = docBaseName ?? "";
+            foreach (char c in Path.GetInvalidFileNameChars())
+                safeBase = safeBase.Replace(c, '_');
+            string fileName = string.IsNullOrWhiteSpace(safeBase)
+                ? "biometric_key.pfx"
+                : safeBase + "_bioCert.pfx";
+
+            string pfxPath = Path.Combine(saveDir, fileName);
             using (var fs = new FileStream(pfxPath, FileMode.Create, FileAccess.Write))
                 store.Save(fs, Array.Empty<char>(), random);
 

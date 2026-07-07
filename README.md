@@ -152,6 +152,18 @@ folder. The installer is generated via the Inno Setup script under `Setup/`
 
 ---
 
+## Works well with — miPDFconvert
+
+Need a PDF to sign in the first place? **[miPDFconvert](https://github.com/Mibuw/miPDFconvert)**
+is a free, open-source (AGPL) **virtual PDF printer** for Windows: print from *any*
+application to a PDF, then sign it here — a natural upstream **pre-stage**:
+
+> **print → PDF ([miPDFconvert](https://github.com/Mibuw/miPDFconvert)) → sign (miPDFsign Community) → archive**
+
+- [miPDFconvert on GitHub](https://github.com/Mibuw/miPDFconvert) · [latest release](https://github.com/Mibuw/miPDFconvert/releases/latest)
+
+---
+
 ## License
 
 **miPDFsign Community is a free, open-source edition**, licensed under the

@@ -10,11 +10,15 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
 
-using Syncfusion.Pdf;
-using Syncfusion.Pdf.Graphics;
-using Syncfusion.Pdf.Interactive;
-using Syncfusion.Pdf.Parsing;
-using Syncfusion.Pdf.Security;
+using SD          = System.Drawing;
+using SDD         = System.Drawing.Drawing2D;
+using SDImaging   = System.Drawing.Imaging;
+
+using iText.Forms.Form.Element;
+using iText.IO.Image;
+using iText.Kernel.Geom;
+using iText.Kernel.Pdf;
+using iText.Signatures;
 
 using SysPath = System.IO.Path;
 
@@ -389,13 +393,14 @@ namespace miPDFsign.Helpers
         }
 
         // ----------------------------------------------------------------
-        //  Private: sign one PDF field
+        //  Private: sign one PDF field (iText incremental / append mode)
         //
-        //  Strategy:
-        //    Syncfusion's ComputeHash event delivers the byte-range content during Save().
-        //    Our handler builds a full PAdES CMS (BouncyCastle: biometric OID, ESS) and
-        //    returns it as SignedData.  Syncfusion writes the CMS into /Contents.
-        //    sig.EstimatedSignatureSize pre-allocates enough space for our large CMS.
+        //  Strategy (iText, replacing the former Syncfusion path):
+        //    PdfSigner in append mode reserves a /Contents slot and hands the byte-range
+        //    content to an IExternalSignatureContainer. Our container builds the full PAdES
+        //    CMS (BouncyCastle: ESS SigningCertificateV2, biometric OID, RFC-3161 timestamp)
+        //    and returns it. iText writes it into /Contents and computes /ByteRange. Existing
+        //    signatures stay valid because append mode never rewrites earlier bytes.
         // ----------------------------------------------------------------
 
         private static byte[] SignFieldIncremental(
@@ -412,48 +417,49 @@ namespace miPDFsign.Helpers
             byte[] encBio = HybridEncrypt(rawBio, (RsaKeyParameters)keyPair.Public, random);
             AppLogger.Info($"    Biometric data: {req.BioPoints.Count} point(s), {rawBio.Length}B raw, {encBio.Length}B encrypted");
 
-            string signerCn = req.FieldName;
-            try
-            {
-                string dnStr = cert.SubjectDN.ToString();
-                if (dnStr.StartsWith("CN=", StringComparison.OrdinalIgnoreCase))
-                    signerCn = dnStr[3..].Trim();
-            }
-            catch { }
+            var container = new PadesCmsContainer(keyPair.Private, cert, encBio, random);
 
             string tmpOrig = pdfPath + ".orig_tmp";
             File.Move(pdfPath, tmpOrig, overwrite: true);
-
             try
             {
-                byte[] origBytes = File.ReadAllBytes(tmpOrig);
+                using (var reader    = new PdfReader(tmpOrig))
+                using (var outStream = new FileStream(pdfPath, FileMode.Create, FileAccess.Write))
+                {
+                    // Append mode: iText adds a new incremental revision, so the /ByteRange of
+                    // every previously-applied signature still points at unchanged bytes.
+                    var signer = new PdfSigner(reader, outStream,
+                        new StampingProperties().UseAppendMode());
 
-                // Every field is signed through Syncfusion's NATIVE incremental-update
-                // pipeline (PdfFileStructure.IncrementalUpdate = true). Save() then appends
-                // a new revision instead of rewriting the file, so the /ByteRange of every
-                // previously-applied signature still points at unchanged bytes and stays
-                // valid in Adobe. This replaces the former hand-rolled ManualIncrementalSign
-                // (manual xref/object surgery) with a single, standard code path.
-                //
-                // The earlier "Syncfusion always full-rewrites" conclusion was caused by
-                // touching PdfLoadedPage.Graphics (which re-initialises page content and
-                // breaks existing signatures). We deliberately never access page.Graphics
-                // here — only page.Size and the signature's own appearance graphics.
-                var (finalPdf, realCms) = SyncfusionSign(
-                    origBytes, req, signerCn, keyPair, cert, encBio, random);
+                    var props = new SignerProperties()
+                        .SetFieldName(req.FieldName)
+                        .SetReason("Tablet signature")
+                        .SetLocation("POS")
+                        .SetPageNumber(req.PageNum)
+                        .SetPageRect(new Rectangle(req.PdfX, req.PdfY, req.PdfW, req.PdfH));
+
+                    var appearance = BuildSignatureAppearance(req);
+                    if (appearance != null) props.SetSignatureAppearance(appearance);
+
+                    signer.SetSignerProperties(props);
+                    signer.SignExternalContainer(container, CmsSlotSize);
+                }
+
+                byte[] realCms = container.BuiltCms
+                    ?? throw new InvalidOperationException(
+                        "SignFieldIncremental: container produced no CMS");
 
                 // SubFilter sanity-check
                 {
-                    string pdfText = Encoding.Latin1.GetString(finalPdf);
-                    int etsiCount  = CountOccurrences(pdfText, "ETSI.CAdES.detached");
-                    int pkcs7Count = CountOccurrences(pdfText, "adbe.pkcs7.detached");
-                    AppLogger.Info($"    SubFilter: ETSI.CAdES.detached×{etsiCount}  adbe.pkcs7.detached×{pkcs7Count}");
+                    byte[] finalPdf = File.ReadAllBytes(pdfPath);
+                    string pdfText  = Encoding.Latin1.GetString(finalPdf);
+                    int etsiCount   = CountOccurrences(pdfText, "ETSI.CAdES.detached");
+                    AppLogger.Info($"    SubFilter: ETSI.CAdES.detached×{etsiCount}");
                     if (etsiCount == 0)
                         AppLogger.Warn("    *** ETSI.CAdES.detached NOT FOUND — signature is NOT PAdES!");
+                    AppLogger.Info($"    Signed PDF written: {finalPdf.Length} bytes");
                 }
 
-                File.WriteAllBytes(pdfPath, finalPdf);
-                AppLogger.Info($"    Signed PDF written: {finalPdf.Length} bytes");
                 return realCms;
             }
             catch (Exception ex)
@@ -470,108 +476,116 @@ namespace miPDFsign.Helpers
         }
 
         // ----------------------------------------------------------------
-        //  SyncfusionSign — first signature only (full rewrite is acceptable)
+        //  IExternalSignatureContainer — builds our PAdES CMS via BouncyCastle
         // ----------------------------------------------------------------
 
-        private static (byte[] finalPdf, byte[] cms) SyncfusionSign(
-            byte[] origBytes,
-            FieldSignRequest req,
-            string signerCn,
-            AsymmetricCipherKeyPair keyPair,
-            BcX509Certificate cert,
-            byte[] encBio,
-            SecureRandom random)
+        private sealed class PadesCmsContainer : IExternalSignatureContainer
         {
-            byte[]? builtCms = null;
+            private readonly AsymmetricKeyParameter _key;
+            private readonly BcX509Certificate      _cert;
+            private readonly byte[]                 _encBio;
+            private readonly SecureRandom           _rng;
 
-            using var pdfDoc = new PdfLoadedDocument(new MemoryStream(origBytes));
+            /// <summary>The CMS produced by the last <see cref="Sign"/> call (fed to AddLtv).</summary>
+            public byte[]? BuiltCms { get; private set; }
 
-            // Native incremental update: Save() appends a new revision instead of doing a
-            // full rewrite, so every existing signature's /ByteRange remains valid.
-            pdfDoc.FileStructure.IncrementalUpdate = true;
+            public PadesCmsContainer(AsymmetricKeyParameter key, BcX509Certificate cert,
+                byte[] encBio, SecureRandom rng)
+            { _key = key; _cert = cert; _encBio = encBio; _rng = rng; }
 
-            var page = pdfDoc.Pages[req.PageNum - 1] as PdfLoadedPage
-                ?? throw new InvalidOperationException($"Page {req.PageNum} not found");
-
-            // Read the page size via PdfLoadedPage.Size ONLY. Never touch page.Graphics on
-            // a loaded page — it re-initialises the page content stream and invalidates
-            // any signature already present (confirmed Syncfusion behaviour).
-            float pageH = page.Size.Height;
-
-            // Single, consistent coordinate conversion. req.PdfX/PdfY are PDF user-space
-            // (bottom-left origin); Syncfusion's RectangleF uses a top-left origin.
-            var bounds = new Syncfusion.Drawing.RectangleF(
-                req.PdfX, pageH - req.PdfY - req.PdfH, req.PdfW, req.PdfH);
-
-            // CRITICAL: (pdfDoc, page, null, name) — do NOT assign to existingField.Signature
-            // (registers a duplicate DocumentSaved handler → OverflowException).
-            var sig = new PdfSignature(pdfDoc, page, null!, req.FieldName);
-            sig.Bounds                         = bounds;
-            sig.Reason                         = "Tablet signature";
-            sig.LocationInfo                   = "POS";
-            sig.SignedName                     = signerCn;
-            sig.EstimatedSignatureSize         = CmsSlotSize;
-            // CAdES → Syncfusion writes /SubFilter /ETSI.CAdES.detached itself (PAdES-BES),
-            // replacing the former in-place byte patching of "adbe.pkcs7.detached".
-            sig.Settings.CryptographicStandard = CryptographicStandard.CADES;
-            sig.Settings.DigestAlgorithm       = DigestAlgorithm.SHA256;
-
-            AppLogger.Debug($"    SyncfusionSign: field='{req.FieldName}' bounds={bounds} (CAdES, incremental)");
-
-            // Transparent vector-ink appearance (no opaque PNG composited on white).
-            DrawSignatureAppearance(sig.Appearance.Normal.Graphics, req);
-
-            // Build the real PAdES CMS directly from the byte-range content Syncfusion hands
-            // us, and return it. Syncfusion writes it into /Contents and computes the final
-            // /ByteRange itself — no manual placeholder, SubFilter patch, trim or inject.
-            sig.ComputeHash += (_, ars) =>
+            public void ModifySigningDictionary(PdfDictionary signDic)
             {
-                byte[] toSign = ars.Data ?? Array.Empty<byte>();
-                builtCms = BuildPadesCms(toSign, keyPair.Private, cert, encBio, random);
-                AppLogger.Info($"    ComputeHash: signing {toSign.Length}B → CMS {builtCms.Length}B");
-                ars.SignedData = builtCms;
-            };
+                signDic.Put(PdfName.Filter,    new PdfName("Adobe.PPKLite"));
+                signDic.Put(PdfName.SubFilter, new PdfName("ETSI.CAdES.detached"));
+            }
 
-            using var ms = new MemoryStream();
-            pdfDoc.Save(ms);
-            byte[] finalPdf = ms.ToArray();
-
-            if (builtCms == null)
-                throw new InvalidOperationException(
-                    "SyncfusionSign: ComputeHash was never invoked — signature not created");
-
-            AppLogger.Info($"    SyncfusionSign done: {finalPdf.Length}B");
-            return (finalPdf, builtCms);
+            public byte[] Sign(Stream rangeStream)
+            {
+                byte[] data;
+                using (var ms = new MemoryStream()) { rangeStream.CopyTo(ms); data = ms.ToArray(); }
+                AppLogger.Debug($"    Signing byte range: {data.Length}B");
+                BuiltCms = BuildPadesCms(data, _key, _cert, _encBio, _rng);
+                AppLogger.Info($"    CMS built ({BuiltCms.Length}B)");
+                return BuiltCms;
+            }
         }
 
         // ----------------------------------------------------------------
-        //  Signature appearance — transparent vector ink
+        //  IExternalSignatureContainer — captures bytes-to-sign for QES (deferred)
+        // ----------------------------------------------------------------
+
+        private sealed class QesCaptureContainer : IExternalSignatureContainer
+        {
+            /// <summary>The byte-range content the external signer (A-Trust) must sign.</summary>
+            public byte[] Captured { get; private set; } = Array.Empty<byte>();
+
+            public void ModifySigningDictionary(PdfDictionary signDic)
+            {
+                signDic.Put(PdfName.Filter,    new PdfName("Adobe.PPKLite"));
+                signDic.Put(PdfName.SubFilter, new PdfName("ETSI.CAdES.detached"));
+            }
+
+            public byte[] Sign(Stream rangeStream)
+            {
+                using var ms = new MemoryStream();
+                rangeStream.CopyTo(ms);
+                Captured = ms.ToArray();
+                // Return empty → iText leaves a zero-filled /Contents slot of the reserved
+                // size, which InjectQesCms overwrites with the real CMS from A-Trust.
+                return Array.Empty<byte>();
+            }
+        }
+
+        // ----------------------------------------------------------------
+        //  Signature appearance — transparent vector ink (rasterised to PNG)
         // ----------------------------------------------------------------
 
         /// <summary>
-        /// Draws the signature ink into a Syncfusion appearance <see cref="PdfGraphics"/>
-        /// surface. When <see cref="FieldSignRequest.AppearanceStrokes"/> is present the
-        /// strokes are rendered as black vector paths on a fully transparent background
-        /// (the underlying document text remains visible). Otherwise it falls back to the
-        /// legacy PNG image (which may be opaque) or draws nothing for an invisible field.
+        /// Builds an iText signature appearance from the request's ink. When
+        /// <see cref="FieldSignRequest.AppearanceStrokes"/> is present the strokes are
+        /// rasterised to a transparent PNG (GDI+, background-thread safe — unlike WPF);
+        /// otherwise the legacy <see cref="FieldSignRequest.AppearancePng"/> is used.
+        /// Returns null for an invisible signature field.
         /// </summary>
-        private static void DrawSignatureAppearance(PdfGraphics g, FieldSignRequest req)
+        private static SignatureFieldAppearance? BuildSignatureAppearance(FieldSignRequest req)
+        {
+            byte[]? png = RenderAppearanceStrokesToPng(req) ?? req.AppearancePng;
+            if (png == null) return null;
+
+            var appearance = new SignatureFieldAppearance(SignerProperties.IGNORED_ID);
+            appearance.SetContent(ImageDataFactory.Create(png));
+            return appearance;
+        }
+
+        /// <summary>
+        /// Rasterises the pressure-sensitive ink strokes (appearance-box coordinates:
+        /// top-left origin, Y down, PDF points) into a transparent PNG using GDI+
+        /// (System.Drawing) — which, unlike WPF, is safe to call from a background thread.
+        /// Returns null when there are no vector strokes.
+        /// </summary>
+        private static byte[]? RenderAppearanceStrokesToPng(FieldSignRequest req)
         {
             var strokes = req.AppearanceStrokes;
-            if (strokes != null && strokes.Count > 0)
-            {
-                // Pressure-sensitive ink: each segment is drawn with its own pen width,
-                // interpolated between MinPenWidth (lightest touch) and MaxPenWidth (full
-                // pressure) from the two endpoints' average PressureFactor. Round caps/joins
-                // make the varying-width segments blend into one continuous stroke.
-                const float minPenW = 0.35f;   // PDF points at pressure 0
-                const float maxPenW = 2.40f;   // PDF points at pressure 1
-                static float WidthFor(float pressure) =>
-                    minPenW + (maxPenW - minPenW) * Math.Clamp(pressure, 0f, 1f);
+            if (strokes == null || strokes.Count == 0) return null;
 
-                // Match the on-screen ink colour (WPF Colors.DarkBlue = RGB 0,0,139).
-                var inkColor = new PdfColor(0, 0, 139);
-                var dotBrush = new PdfSolidBrush(inkColor);
+            const float minPenW = 0.35f;   // PDF points at pressure 0
+            const float maxPenW = 2.40f;   // PDF points at pressure 1
+            const float scale   = 4f;      // pixels per PDF point (appearance render resolution)
+            static float WidthFor(float pressure) =>
+                minPenW + (maxPenW - minPenW) * Math.Clamp(pressure, 0f, 1f);
+
+            int w = Math.Max(1, (int)MathF.Ceiling(req.PdfW * scale));
+            int h = Math.Max(1, (int)MathF.Ceiling(req.PdfH * scale));
+
+            // On-screen ink colour (WPF Colors.DarkBlue = RGB 0,0,139).
+            var ink = SD.Color.FromArgb(255, 0, 0, 139);
+
+            using var bmp = new SD.Bitmap(w, h, SDImaging.PixelFormat.Format32bppArgb);
+            using (var g = SD.Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SDD.SmoothingMode.AntiAlias;
+                g.Clear(SD.Color.Transparent);
+                using var brush = new SD.SolidBrush(ink);
 
                 foreach (var stroke in strokes)
                 {
@@ -579,35 +593,31 @@ namespace miPDFsign.Helpers
 
                     if (stroke.Count == 1)
                     {
-                        // A single tap/dot — draw a filled circle sized by its pressure.
-                        float r = WidthFor(stroke[0].Pressure) * 0.5f;
-                        g.DrawEllipse(dotBrush, stroke[0].X - r, stroke[0].Y - r, r * 2f, r * 2f);
+                        float r = WidthFor(stroke[0].Pressure) * 0.5f * scale;
+                        g.FillEllipse(brush,
+                            stroke[0].X * scale - r, stroke[0].Y * scale - r, r * 2f, r * 2f);
                         continue;
                     }
 
                     for (int i = 1; i < stroke.Count; i++)
                     {
                         float segPressure = (stroke[i - 1].Pressure + stroke[i].Pressure) * 0.5f;
-                        var pen = new PdfPen(inkColor, WidthFor(segPressure))
+                        using var pen = new SD.Pen(ink, WidthFor(segPressure) * scale)
                         {
-                            LineCap  = PdfLineCap.Round,
-                            LineJoin = PdfLineJoin.Round,
+                            StartCap = SDD.LineCap.Round,
+                            EndCap   = SDD.LineCap.Round,
+                            LineJoin = SDD.LineJoin.Round,
                         };
                         g.DrawLine(pen,
-                            stroke[i - 1].X, stroke[i - 1].Y,
-                            stroke[i].X,     stroke[i].Y);
+                            stroke[i - 1].X * scale, stroke[i - 1].Y * scale,
+                            stroke[i].X     * scale, stroke[i].Y     * scale);
                     }
                 }
-                return;
             }
 
-            // Legacy fallback: opaque PNG appearance.
-            if (req.AppearancePng != null)
-            {
-                using var pngStream = new MemoryStream(req.AppearancePng);
-                var bitmap = new PdfBitmap(pngStream);
-                g.DrawImage(bitmap, 0, 0, req.PdfW, req.PdfH);
-            }
+            using var outMs = new MemoryStream();
+            bmp.Save(outMs, SDImaging.ImageFormat.Png);
+            return outMs.ToArray();
         }
 
         // ----------------------------------------------------------------
@@ -768,57 +778,33 @@ namespace miPDFsign.Helpers
 
             byte[] captured = Array.Empty<byte>();
 
-            using (var pdfDoc = new PdfLoadedDocument(pdfPath))
+            // iText deferred signing: reserve a /Contents slot of CmsSlotSize and capture
+            // the byte-range content the external signer (A-Trust) must sign. The container
+            // returns empty, so /Contents is a zero-filled placeholder that InjectQesCms
+            // overwrites later with the real CMS. Append mode keeps existing signatures valid.
+            var capture = new QesCaptureContainer();
+            using (var reader = new PdfReader(pdfPath))
+            using (var outMs  = new MemoryStream())
             {
-                // Native incremental update so any signature already present stays valid.
-                pdfDoc.FileStructure.IncrementalUpdate = true;
+                var signer = new PdfSigner(reader, outMs,
+                    new StampingProperties().UseAppendMode());
 
-                var page  = pdfDoc.Pages[req.PageNum - 1] as PdfLoadedPage
-                    ?? throw new InvalidOperationException($"Page {req.PageNum} not found");
+                var props = new SignerProperties()
+                    .SetFieldName(req.FieldName)
+                    .SetReason("QES via ID-Austria")
+                    .SetLocation("POS")
+                    .SetPageNumber(req.PageNum)
+                    .SetPageRect(new Rectangle(req.PdfX, req.PdfY, req.PdfW, req.PdfH));
 
-                // page.Size only — never page.Graphics (would invalidate existing signatures).
-                float pageH  = page.Size.Height;
+                var appearance = BuildSignatureAppearance(req);
+                if (appearance != null) props.SetSignatureAppearance(appearance);
 
-                // Single, consistent top-left conversion (PDF bottom-left → Syncfusion top-left).
-                var sigBounds = new Syncfusion.Drawing.RectangleF(
-                    req.PdfX, pageH - req.PdfY - req.PdfH, req.PdfW, req.PdfH);
+                signer.SetSignerProperties(props);
+                signer.SignExternalContainer(capture, CmsSlotSize);
 
-                var sig = new PdfSignature(pdfDoc, page, null!, req.FieldName);
-                sig.Bounds                         = sigBounds;
-                sig.Reason                         = "QES via ID-Austria";
-                sig.LocationInfo                   = "POS";
-                sig.EstimatedSignatureSize         = CmsSlotSize;
-                // CAdES → Syncfusion writes /SubFilter /ETSI.CAdES.detached natively
-                // (PAdES-BES); no post-hoc byte patching required.
-                sig.Settings.CryptographicStandard = CryptographicStandard.CADES;
-                sig.Settings.DigestAlgorithm       = DigestAlgorithm.SHA256;
-
-                // Transparent vector-ink appearance.
-                DrawSignatureAppearance(sig.Appearance.Normal.Graphics, req);
-
-                // Capture the bytes-to-sign from ComputeHash; return a dummy CMS so the
-                // PDF is well-formed (InjectQesCms overwrites it later).
-                //
-                // CRITICAL: ars.SignedData must be exactly CmsSlotSize bytes.
-                // Syncfusion sizes the /Contents slot (and computes /ByteRange) based on
-                // ars.SignedData.Length, NOT on EstimatedSignatureSize alone.
-                // If ars.SignedData is smaller (e.g. CmsSlotSize/4), Syncfusion shrinks the
-                // /Contents slot to 2×ars.SignedData.Length hex chars and recalculates
-                // /ByteRange accordingly.  A-Trust then hashes a different byte range than
-                // Adobe later verifies → "document was modified" error.
-                // Solution: dummy must be exactly CmsSlotSize bytes so the slot and
-                // /ByteRange agree between placeholder PDF, A-Trust, and Adobe.
-                sig.ComputeHash += (_, ars) =>
-                {
-                    captured = ars.Data ?? Array.Empty<byte>();
-                    // Zero-filled dummy of full slot size; InjectQesCms overwrites with real CMS.
-                    ars.SignedData = new byte[CmsSlotSize];
-                };
-
-                using var ms = new MemoryStream();
-                pdfDoc.Save(ms);
-                placeholderPdf = ms.ToArray();
+                placeholderPdf = outMs.ToArray();
             }
+            captured = capture.Captured;
 
             // /SubFilter is already /ETSI.CAdES.detached because the signature was created
             // with CryptographicStandard.CADES — no post-hoc byte patching is required.

@@ -1,8 +1,10 @@
 <p align="center">
-  <img src="Assets/miPDFsign_logo.png" width="120" alt="miPDFsign logo">
+  <img src="Assets/miPDFsignCommunity_logo.png" width="120" alt="miPDFsign Community logo">
 </p>
 
 # miPDFsign Community
+
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) [![GitHub release](https://img.shields.io/github/v/release/Mibuw/miPDFsign-Community)](https://github.com/Mibuw/miPDFsign-Community/releases/latest)
 
 **miPDFsign Community** is the free, open-source (**AGPL-3.0**) edition of miPDFsign — a .NET 8 WPF application for signature tablets. It captures handwritten signatures together with biometric pressure data and embeds them as a **PAdES signature** into PDF documents. It uses the **iText** PDF engine (AGPL).
 
@@ -45,12 +47,12 @@
 ## Project Structure
 
 ```
-miPDFsign/
-├── App.xaml / App.xaml.cs          # Entry point, Syncfusion license registration
+miPDFsignCommunity/
+├── App.xaml / App.xaml.cs          # Entry point (iText – no license key needed)
 ├── MainWindow.xaml / .cs           # Main window
 ├── IdAustriaWindow.xaml / .cs      # QES signature via ID Austria
 ├── SignatureTypeDialog.xaml / .cs  # Signature type selection
-├── miPDFsign.ui-labels.json           # UI texts (editable without recompile)
+├── miPDFsign.ui-labels.{en,de}.json   # UI texts, bilingual (editable without recompile)
 ├── Assets/                         # Icon, logos
 ├── Helpers/
 │   ├── PdfCertSigner.cs            # PDF signing (PAdES B/T/LT/LTA, core component)
@@ -68,10 +70,12 @@ miPDFsign/
 
 ## Signature Architecture (Brief Overview)
 
-All signature fields are signed via **a single** standard-compliant Syncfusion path
-(`PdfLoadedDocument` with `FileStructure.IncrementalUpdate = true`). The CMS structure
-is built in the `ComputeHash` event with BouncyCastle (`/SubFilter /ETSI.CAdES.detached`,
-SHA-256). Signature images are drawn into the appearance as transparent vector strokes.
+All signature fields are signed with **iText** in append mode (`PdfSigner` +
+`IExternalSignatureContainer`), so each field is added as an incremental revision and
+existing signatures stay valid. The CMS is built with BouncyCastle
+(`/SubFilter /ETSI.CAdES.detached`, SHA-256, ESS SigningCertificateV2 + an encrypted
+biometric attribute). The signature appearance is the pressure-sensitive ink rendered
+as a transparent PNG.
 
 **PAdES levels:**
 
@@ -99,9 +103,6 @@ has expired:
 > biometric data (forensic use via `ExtractBiometricData`). Losing it makes the
 > encrypted biometric data unrecoverable.
 
-> For implementation details, coordinate conversion, TSA configuration, and
-> migration history, see [`CLAUDE.md`](./CLAUDE.md).
-
 ---
 
 ## Build & Deployment
@@ -115,7 +116,7 @@ dotnet publish -c Release
 ```
 
 The publish is **self-contained** (no .NET runtime required on the target machine)
-and consists of `miPDFsign.exe` + `miPDFsign.dll` together with all dependencies in one
+and consists of `miPDFsignCommunity.exe` + `miPDFsignCommunity.dll` together with all dependencies in one
 folder. The installer is generated via the Inno Setup script under `Setup/`
 (see `Setup/build.bat`).
 
@@ -130,14 +131,29 @@ folder. The installer is generated via the Inno Setup script under `Setup/`
 
 ## License
 
-miPDFsign Community is licensed under the **GNU Affero General Public License v3.0**
-(AGPL-3.0) — see [`LICENSE`](./LICENSE). Because it links **iText** under the AGPL, the
-entire application is AGPL: if you distribute it (or offer it over a network), you must
-make the complete corresponding source available under the same license.
+**miPDFsign Community is a free, open-source edition**, licensed under the
+**GNU Affero General Public License v3.0** (AGPL-3.0) — see [`LICENSE`](./LICENSE).
+Because it links **iText** under the AGPL, the entire application is AGPL: if you
+distribute it (or offer it over a network), you must make the complete corresponding
+source available under the same license.
 
-Building a **closed-source / commercial** product on this code base requires a
-**commercial iText license** instead. The commercial, Syncfusion-based edition of
-miPDFsign is a separate product.
+### Commercial edition
+
+A **commercial edition of miPDFsign is available on request** — without AGPL
+obligations and with **additional features** (e.g. an inbound/outbound plugin
+architecture, archive/DMS connectors, system integrations, and priority support). It
+is a separate product built on a commercially licensed PDF engine. Please
+[get in touch](#author) for licensing, pricing, and a feature overview.
 
 Third-party components and their licenses are documented in
 [`THIRD-PARTY-NOTICES.md`](./THIRD-PARTY-NOTICES.md).
+
+---
+
+## Author
+
+**Wolfgang Mitterbucher** — Software Engineering & Digital Identity, Leonding (Austria)
+
+🌐 [www.mitterbucher.com](https://www.mitterbucher.com) · 💼 [LinkedIn](https://at.linkedin.com/in/wolfgangmitterbucher) · ✉️ office@mitterbucher.com
+
+**More open-source projects:** [miPDFconvert](https://github.com/Mibuw/miPDFconvert) · [miPDFvalidator](https://github.com/Mibuw/miPDFvalidator) · [miEUDIverifier](https://github.com/Mibuw/miEUDIverifier)

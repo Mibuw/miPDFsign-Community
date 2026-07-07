@@ -6,19 +6,22 @@ using System.Windows;
 using System.Windows.Ink;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using Syncfusion.Pdf;
-using Syncfusion.Pdf.Graphics;
-using Syncfusion.Pdf.Interactive;
-using Syncfusion.Pdf.Parsing;
+using iText.Forms;
+using iText.Forms.Fields;
+using iText.IO.Image;
+using iText.Kernel.Colors;
+using iText.Kernel.Geom;
+using iText.Kernel.Pdf;
+using iText.Kernel.Pdf.Canvas;
 using miPDFsign.Models;
-using SysDrawing = System.Drawing;
 
 namespace miPDFsign.Helpers
 {
     /// <summary>
-    /// Syncfusion-based helper for:
+    /// iText-based helper for:
     ///   1. Detecting checkbox form fields in a PDF
-    ///   2. Exporting the signed/annotated PDF back to disk
+    ///   2. Reading text/combo/list form field values
+    ///   3. Exporting the signed/annotated PDF back to disk
     /// </summary>
     public static class PdfExporter
     {
@@ -32,82 +35,64 @@ namespace miPDFsign.Helpers
         /// </summary>
         public static List<CheckboxInfo> GetCheckboxes(string pdfPath)
         {
-            using var pdfDoc = new PdfLoadedDocument(File.ReadAllBytes(pdfPath));
+            using var reader = new PdfReader(pdfPath);
+            using var pdfDoc = new PdfDocument(reader);
             return GetCheckboxes(pdfDoc);
         }
 
         /// <summary>
-        /// Overload for when a <see cref="PdfLoadedDocument"/> is already open (avoids a second open).
+        /// Overload for when a <see cref="PdfDocument"/> is already open (avoids a second open).
         /// </summary>
-        public static List<CheckboxInfo> GetCheckboxes(PdfLoadedDocument pdfDoc)
+        public static List<CheckboxInfo> GetCheckboxes(PdfDocument pdfDoc)
         {
             var result = new List<CheckboxInfo>();
 
-            if (pdfDoc.Form is not PdfLoadedForm form) return result;
+            var form = PdfAcroForm.GetAcroForm(pdfDoc, false);
+            if (form == null) return result;
 
-            foreach (PdfLoadedField field in form.Fields)
+            foreach (var kvp in form.GetAllFormFields())
             {
-                if (field is not PdfLoadedCheckBoxField cbField) continue;
+                var field = kvp.Value;
+                if (field is not PdfButtonFormField btn) continue;
+                if (!IsCheckBox(btn)) continue;
 
-                // A checkbox field may carry multiple widgets (Items) or just one.
-                if (cbField.Items.Count > 0)
+                // A checkbox field may carry multiple widgets or just one.
+                var widgets = field.GetWidgets();
+                if (widgets == null) continue;
+
+                string val  = field.GetValueAsString() ?? string.Empty;
+                bool isOn   = val.Equals("Yes", StringComparison.OrdinalIgnoreCase)
+                           || val.Equals("On",  StringComparison.OrdinalIgnoreCase)
+                           || val.Equals("1",   StringComparison.OrdinalIgnoreCase);
+
+                foreach (var widget in widgets)
                 {
-                    // Multiple widgets — iterate each item independently.
-                    foreach (PdfLoadedCheckBoxItem item in cbField.Items)
+                    var rectArr = widget.GetRectangle();
+                    if (rectArr == null) continue;
+
+                    float x0 = rectArr.GetAsNumber(0).FloatValue();
+                    float y0 = rectArr.GetAsNumber(1).FloatValue();
+                    float x1 = rectArr.GetAsNumber(2).FloatValue();
+                    float y1 = rectArr.GetAsNumber(3).FloatValue();
+
+                    var page    = widget.GetPage();
+                    int pageNum = page != null ? pdfDoc.GetPageNumber(page) : 0; // 1-based
+
+                    // iText widget rectangles are already in PDF space (bottom-left origin).
+                    result.Add(new CheckboxInfo
                     {
-                        AddCheckboxInfo(result, pdfDoc, field.Name, item.Page,
-                            item.Bounds, item.Checked);
-                    }
-                }
-                else
-                {
-                    // Single widget — use the field directly.
-                    AddCheckboxInfo(result, pdfDoc, field.Name, cbField.Page,
-                        cbField.Bounds, cbField.Checked);
+                        FieldName = kvp.Key,
+                        PageIndex = pageNum - 1,
+                        PdfLeft   = Math.Min(x0, x1),
+                        PdfBottom = Math.Min(y0, y1),
+                        PdfWidth  = Math.Abs(x1 - x0),
+                        PdfHeight = Math.Abs(y1 - y0),
+                        IsChecked = isOn,
+                    });
                 }
             }
 
             return result;
-        }
-
-        private static void AddCheckboxInfo(
-            List<CheckboxInfo> result,
-            PdfLoadedDocument  pdfDoc,
-            string             fieldName,
-            PdfPageBase?       page,
-            Syncfusion.Drawing.RectangleF sfBounds,  // Syncfusion: top-left origin
-            bool               isChecked)
-        {
-            int pageIdx = -1;
-            float pageHeight = 0f;
-
-            if (page != null)
-            {
-                for (int i = 0; i < pdfDoc.Pages.Count; i++)
-                {
-                    if (ReferenceEquals(pdfDoc.Pages[i], page))
-                    {
-                        pageIdx    = i;
-                        pageHeight = (pdfDoc.Pages[i] as PdfLoadedPage)!.Size.Height;
-                        break;
-                    }
-                }
-            }
-
-            // Syncfusion widget bounds use the page's top-left coordinate system.
-            // Convert to PDF space (bottom-left) for consistency with the rest of the app.
-            float pdfBottom = pageHeight - sfBounds.Y - sfBounds.Height;
-
-            result.Add(new CheckboxInfo
-            {
-                FieldName = fieldName,
-                PageIndex = pageIdx,
-                PdfLeft   = sfBounds.X,
-                PdfBottom = pdfBottom,
-                PdfWidth  = sfBounds.Width,
-                PdfHeight = sfBounds.Height,
-                IsChecked = isChecked,
-            });
         }
 
         // ----------------------------------------------------------------
@@ -120,34 +105,24 @@ namespace miPDFsign.Helpers
         /// </summary>
         public static string? GetTextFieldValue(string pdfPath, string fieldName)
         {
-            using var pdfDoc = new PdfLoadedDocument(File.ReadAllBytes(pdfPath));
+            using var reader = new PdfReader(pdfPath);
+            using var pdfDoc = new PdfDocument(reader);
             return GetTextFieldValue(pdfDoc, fieldName);
         }
 
         /// <summary>
-        /// Overload for when a <see cref="PdfLoadedDocument"/> is already open.
+        /// Overload for when a <see cref="PdfDocument"/> is already open.
         /// </summary>
-        public static string? GetTextFieldValue(PdfLoadedDocument pdfDoc, string fieldName)
+        public static string? GetTextFieldValue(PdfDocument pdfDoc, string fieldName)
         {
-            if (pdfDoc.Form is not PdfLoadedForm form) return null;
+            var form = PdfAcroForm.GetAcroForm(pdfDoc, false);
+            if (form == null) return null;
 
-            foreach (PdfLoadedField field in form.Fields)
-            {
-                if (!string.Equals(field.Name, fieldName, StringComparison.OrdinalIgnoreCase))
-                    continue;
+            var field = form.GetField(fieldName);
+            if (field == null) return null;
 
-                string? val = field switch
-                {
-                    PdfLoadedTextBoxField     tf => tf.Text,
-                    PdfLoadedComboBoxField    cb => cb.SelectedValue,
-                    PdfLoadedListBoxField     lb => lb.SelectedValue != null && lb.SelectedValue.Length > 0
-                                                     ? string.Join(", ", lb.SelectedValue) : null,
-                    _                            => null,
-                };
-                return string.IsNullOrWhiteSpace(val) ? null : val;
-            }
-
-            return null;
+            var val = field.GetValueAsString();
+            return string.IsNullOrWhiteSpace(val) ? null : val;
         }
 
         // ----------------------------------------------------------------
@@ -177,29 +152,61 @@ namespace miPDFsign.Helpers
             IReadOnlyList<DateFieldDescriptor>         dateFields,
             IReadOnlyList<LocationDateFieldDescriptor> locationDateFields)
         {
-            AppLogger.Info($"PdfExporter.Export: '{Path.GetFileName(inputPath)}' → '{Path.GetFileName(outputPath)}'");
+            AppLogger.Info($"PdfExporter.Export: '{System.IO.Path.GetFileName(inputPath)}' → '{System.IO.Path.GetFileName(outputPath)}'");
             AppLogger.Debug($"  AcroForm checkboxes: {checkboxStates.Count}  Parsed checkboxes: {parsedCheckboxes.Count}" +
                             $"  Date fields: {dateFields.Count}  LD fields: {locationDateFields.Count}" +
                             $"  Pages with strokes: {pageStrokes.Count}");
 
-            using var pdfDoc = new PdfLoadedDocument(File.ReadAllBytes(inputPath));
+            using var reader = new PdfReader(inputPath);
+            using var writer = new PdfWriter(outputPath);
+            using var pdfDoc = new PdfDocument(reader, writer);
 
             // --- 1. Update AcroForm checkbox fields ---
-            if (pdfDoc.Form is PdfLoadedForm form)
+            var form = PdfAcroForm.GetAcroForm(pdfDoc, false);
+            if (form != null)
             {
-                foreach (PdfLoadedField field in form.Fields)
+                foreach (var kv in checkboxStates)
                 {
-                    if (field is not PdfLoadedCheckBoxField cbField) continue;
-                    if (!checkboxStates.TryGetValue(field.Name, out bool isChecked)) continue;
+                    var field = form.GetField(kv.Key);
+                    if (field == null)
+                    {
+                        AppLogger.Warn($"  Checkbox field '{kv.Key}' not found in AcroForm – skipped");
+                        continue;
+                    }
 
                     try
                     {
-                        cbField.Checked = isChecked;
-                        AppLogger.Debug($"  Checkbox '{field.Name}' set to {(isChecked ? "checked" : "unchecked")}");
+                        // Determine the on-value by scanning the widget's normal appearance
+                        // (/AP /N) dictionary for the key that is not "Off" (e.g. "Yes",
+                        // "On", "Checked", …).  GetAppearanceState() is unreliable when the
+                        // box is currently unchecked because it returns "Off" and we cannot
+                        // distinguish "Off" from a custom on-name.
+                        string onValue = "Yes";
+                        var widgets = field.GetWidgets();
+                        if (widgets?.Count > 0)
+                        {
+                            var apDict   = widgets[0].GetAppearanceDictionary();
+                            var normalAp = apDict?.GetAsDictionary(PdfName.N);
+                            if (normalAp != null)
+                            {
+                                foreach (var key in normalAp.KeySet())
+                                {
+                                    string keyName = key.GetValue();
+                                    if (!keyName.Equals("Off", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        onValue = keyName;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        field.SetValue(kv.Value ? onValue : "Off");
+                        AppLogger.Debug($"  Checkbox '{kv.Key}' set to {(kv.Value ? "checked" : "unchecked")} (on-value='{onValue}')");
                     }
                     catch (Exception ex)
                     {
-                        AppLogger.Warn($"  Checkbox '{field.Name}' value set failed: {ex.Message}");
+                        AppLogger.Warn($"  Checkbox '{kv.Key}' value set failed: {ex.Message}");
                     }
                 }
             }
@@ -217,7 +224,7 @@ namespace miPDFsign.Helpers
             {
                 if (kv.Value.Count == 0) continue;
                 int pageIdx = kv.Key;
-                if (pageIdx < 0 || pageIdx >= pdfDoc.Pages.Count)
+                if (pageIdx < 0 || pageIdx >= pdfDoc.GetNumberOfPages())
                 {
                     AppLogger.Warn($"  Page index {pageIdx} out of range – strokes skipped");
                     continue;
@@ -225,12 +232,10 @@ namespace miPDFsign.Helpers
 
                 AppLogger.Debug($"  Page {pageIdx}: stamping {kv.Value.Count} stroke(s)");
 
-                var pdfPage    = pdfDoc.Pages[pageIdx] as PdfLoadedPage;
-                if (pdfPage == null) continue;
-
-                var pageSize   = pdfPage.Size;
-                float pageW    = pageSize.Width;
-                float pageH    = pageSize.Height;
+                var pdfPage  = pdfDoc.GetPage(pageIdx + 1);
+                var mediaBox = pdfPage.GetMediaBox();
+                float pageW  = mediaBox.GetWidth();
+                float pageH  = mediaBox.GetHeight();
 
                 if (!pageImageSizes.TryGetValue(pageIdx, out Size imgSize) || imgSize.IsEmpty)
                 {
@@ -242,7 +247,7 @@ namespace miPDFsign.Helpers
                 double scaleXtoPdf = pageW / imgSize.Width;
                 double scaleYtoPdf = pageH / imgSize.Height;
 
-                var graphics = pdfPage.Graphics;
+                var canvas = new PdfCanvas(pdfPage);
 
                 foreach (var stroke in kv.Value)
                 {
@@ -255,14 +260,11 @@ namespace miPDFsign.Helpers
                     double bh = Math.Min(imgSize.Height - by, bounds.Height + pad * 2);
                     if (bw <= 0 || bh <= 0) continue;
 
-                    // Corresponding rectangle in PDF points
-                    float pdfLeft   = (float)(bx  * scaleXtoPdf);
-                    float pdfBottom = (float)((imgSize.Height - by - bh) * scaleYtoPdf);
+                    // Corresponding rectangle in PDF space (bottom-left origin, Y inverted)
+                    float pdfLeft   = mediaBox.GetLeft()   + (float)(bx * scaleXtoPdf);
+                    float pdfBottom = mediaBox.GetBottom() + (float)((imgSize.Height - by - bh) * scaleYtoPdf);
                     float pdfWidth  = (float)(bw * scaleXtoPdf);
                     float pdfHeight = (float)(bh * scaleYtoPdf);
-
-                    // Syncfusion uses top-left origin; convert from PDF space (bottom-left)
-                    float sfY = pageH - pdfBottom - pdfHeight;
 
                     // Pixel size of the stroke image at exportDpi
                     int targetW = Math.Max(1, (int)(pdfWidth  / 72f * exportDpi));
@@ -271,9 +273,10 @@ namespace miPDFsign.Helpers
                     byte[] pngBytes = RenderStrokeToPng(stroke, bx, by, bw, bh, targetW, targetH);
                     if (pngBytes.Length == 0) continue;
 
-                    using var imgStream = new MemoryStream(pngBytes);
-                    var bitmap = new PdfBitmap(imgStream);
-                    graphics.DrawImage(bitmap, pdfLeft, sfY, pdfWidth, pdfHeight);
+                    canvas.AddImageFittedIntoRectangle(
+                        ImageDataFactory.Create(pngBytes),
+                        new Rectangle(pdfLeft, pdfBottom, pdfWidth, pdfHeight),
+                        false);
 
                     totalStrokesWritten++;
                 }
@@ -289,68 +292,83 @@ namespace miPDFsign.Helpers
                 bool isChecked = parsedCheckboxStates.TryGetValue(pcb.Identifier, out bool st)
                     ? st : pcb.IsChecked;
                 if (!isChecked) continue;
-                if (pcb.PageIndex < 0 || pcb.PageIndex >= pdfDoc.Pages.Count) continue;
+                if (pcb.PageIndex < 0 || pcb.PageIndex >= pdfDoc.GetNumberOfPages()) continue;
 
-                var pdfPage  = pdfDoc.Pages[pcb.PageIndex] as PdfLoadedPage;
-                if (pdfPage == null) continue;
+                var pdfPage = pdfDoc.GetPage(pcb.PageIndex + 1);
+                var cb      = new PdfCanvas(pdfPage);
 
-                float pageH  = pdfPage.Size.Height;
-                float x      = (float)pcb.FieldPdfX;
-                float pdfY   = (float)pcb.FieldPdfY;
-                float w      = (float)Math.Max(pcb.Width,  1);
-                cbStamped++;
-                float h      = (float)Math.Max(pcb.Height, 1);
-                float sfTop  = pageH - pdfY - h; // convert PDF-space bottom → Syncfusion top
-                float pad    = Math.Max(1f, Math.Min(w, h) * 0.12f);
-                float lw     = Math.Max(0.8f, Math.Min(w, h) * 0.09f);
+                // Coordinates are already PDF space (bottom-left origin, Y-up).
+                float x   = (float)pcb.FieldPdfX;
+                float y   = (float)pcb.FieldPdfY;
+                float w   = (float)Math.Max(pcb.Width,  1);
+                float h   = (float)Math.Max(pcb.Height, 1);
+                float pad = Math.Max(1f, Math.Min(w, h) * 0.12f);
+                float lw  = Math.Max(0.8f, Math.Min(w, h) * 0.09f);
 
-                var graphics = pdfPage.Graphics;
-                var pen      = new PdfPen(PdfBrushes.Black, lw);
-
-                // Local helpers: convert a PDF-space Y coordinate to Syncfusion Y
-                float Sf(float pdfPointY) => pageH - pdfPointY;
+                cb.SaveState().SetStrokeColor(ColorConstants.BLACK).SetLineWidth(lw);
 
                 switch (pcb.Style.ToUpperInvariant())
                 {
-                    case "H": // check mark (√ checkmark)
+                    case "H": // check mark (√)
                     {
-                        float midX  = x + w * 0.35f;
-                        float midPY = pdfY + pad;         // mid-point Y in PDF space
-                        graphics.DrawLine(pen,
-                            x + pad,     Sf(pdfY + h * 0.5f),
-                            midX,        Sf(midPY));
-                        graphics.DrawLine(pen,
-                            midX,        Sf(midPY),
-                            x + w - pad, Sf(pdfY + h - pad));
+                        float midX = x + w * 0.35f;
+                        float midY = y + pad;
+                        cb.MoveTo(x + pad,     y + h * 0.5f)
+                          .LineTo(midX,        midY)
+                          .LineTo(x + w - pad, y + h - pad)
+                          .Stroke();
                         break;
                     }
                     case "C": // cross (×)
                     {
-                        graphics.DrawLine(pen, x + pad, Sf(pdfY + pad), x + w - pad, Sf(pdfY + h - pad));
-                        graphics.DrawLine(pen, x + pad, Sf(pdfY + h - pad), x + w - pad, Sf(pdfY + pad));
+                        cb.MoveTo(x + pad,     y + pad)
+                          .LineTo(x + w - pad, y + h - pad)
+                          .Stroke()
+                          .MoveTo(x + pad,     y + h - pad)
+                          .LineTo(x + w - pad, y + pad)
+                          .Stroke();
                         break;
                     }
-                    case "D": // dot (●)
+                    case "D": // dot (●) – stroked circle outline
                     {
-                        float r = Math.Min(w, h) * 0.3f;
+                        float r  = Math.Min(w, h) * 0.3f;
                         float cx = x + w * 0.5f;
-                        float cy = pdfY + h * 0.5f;
-                        graphics.DrawEllipse(pen,
-                            cx - r, Sf(cy + r), r * 2f, r * 2f);
+                        float cy = y + h * 0.5f;
+                        cb.Circle(cx, cy, r).Stroke();
                         break;
                     }
                     default: // filled rectangle
                     {
-                        graphics.DrawRectangle(new PdfSolidBrush(new PdfColor(0, 0, 0)),
-                            x + pad, Sf(pdfY + h - pad), w - 2f * pad, h - 2f * pad);
+                        cb.SetFillColor(ColorConstants.BLACK)
+                          .Rectangle(x + pad, y + pad, w - 2f * pad, h - 2f * pad)
+                          .Fill();
                         break;
                     }
                 }
+
+                cb.RestoreState();
+                cbStamped++;
+                AppLogger.Debug($"  Parsed checkbox '{pcb.Identifier}' stamped (style={pcb.Style}) at ({x:F1},{y:F1}) {w:F1}×{h:F1}pt");
             }
 
             AppLogger.Info($"PdfExporter.Export: {cbStamped} parsed checkbox(es) stamped");
-            using var outFs = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
-            pdfDoc.Save(outFs);
+        }
+
+        // ----------------------------------------------------------------
+        //  Private helpers
+        // ----------------------------------------------------------------
+
+        /// <summary>
+        /// Returns true when the button field is a check box (i.e. neither a radio
+        /// button nor a push button, per the /Ff flags).
+        /// </summary>
+        private static bool IsCheckBox(PdfButtonFormField btn)
+        {
+            var ffObj = btn.GetPdfObject().GetAsInt(PdfName.Ff);
+            int ff    = ffObj ?? 0;
+            const int FF_RADIO       = 1 << 15;
+            const int FF_PUSH_BUTTON = 1 << 16;
+            return (ff & FF_RADIO) == 0 && (ff & FF_PUSH_BUTTON) == 0;
         }
 
         // ----------------------------------------------------------------

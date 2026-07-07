@@ -161,8 +161,8 @@ namespace miPDFsign.Helpers
         // ----------------------------------------------------------------
         //  Title bar
         // ----------------------------------------------------------------
-        public static string AppTitle          => Get("AppTitle",          "miPDFsign");
-        public static string TitleBarFormat    => Get("TitleBarFormat",    "miPDFsign  –  {0}");
+        public static string AppTitle          => Get("AppTitle",          "miPDFsign Community");
+        public static string TitleBarFormat    => Get("TitleBarFormat",    "miPDFsign Community  –  {0}");
 
         // ----------------------------------------------------------------
         //  Toolbar buttons

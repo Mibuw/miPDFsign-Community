@@ -1468,16 +1468,12 @@ namespace miPDFsign
                 ? dlg.SignerName.Trim()
                 : (prefilledName.Length > 0 ? prefilledName : "Signer");
 
-            // ── Determine target path (Save-As dialog or target directory per App.config) ──
-            string? resolvedPath = SaveTargetHelper.ResolveOutputPath(_pdfPath);
-            if (resolvedPath == null)
-            {
-                // Save-As was cancelled by the user – UI remains operable unchanged.
-                AppLogger.Info("Save aborted: user cancelled Save-As dialog");
-                return;
-            }
-            string outPath = resolvedPath;
-            string outDir  = Path.GetDirectoryName(outPath)!;
+            // Sign into a temporary working file first; ask for the final location only AFTER
+            // signing succeeds (so the QES/ID-Austria flow runs before the "Save As" prompt).
+            string outDir       = Path.GetDirectoryName(_pdfPath)!;
+            string tempWorkPath = Path.Combine(Path.GetTempPath(),
+                "miPDFsign_" + Path.GetFileNameWithoutExtension(_pdfPath) + "_signing.pdf");
+            string outPath      = tempWorkPath;   // pipeline writes here; set to the chosen path after Save-As
 
             // ── Lock UI ───────────────────────────────────────────────
             BtnSave.IsEnabled    = false;
@@ -1599,6 +1595,7 @@ namespace miPDFsign
                             TbStatus.Text = UiLabels.StatusQesAborted;
                             BtnSave.IsEnabled  = true;
                             BtnClear.IsEnabled = false;
+                            try { if (File.Exists(tempWorkPath)) File.Delete(tempWorkPath); } catch { }
                             RestoreInkInputAfterSave();   // allow signing again after abort
                             return;
                         }
@@ -1623,6 +1620,23 @@ namespace miPDFsign
                     }
                 }
 
+                // ── Ask for the final destination now that signing succeeded ──
+                string? finalPath = SaveTargetHelper.ResolveOutputPath(_pdfPath);
+                if (finalPath == null)
+                {
+                    // User cancelled the Save-As dialog after signing → discard the result.
+                    AppLogger.Info("Save aborted after signing: user cancelled Save-As dialog");
+                    try { if (File.Exists(tempWorkPath)) File.Delete(tempWorkPath); } catch { }
+                    TbStatus.Text      = "";
+                    BtnSave.IsEnabled  = true;
+                    BtnClear.IsEnabled = false;
+                    RestoreInkInputAfterSave();
+                    return;
+                }
+                if (!string.Equals(finalPath, tempWorkPath, StringComparison.OrdinalIgnoreCase))
+                    File.Move(tempWorkPath, finalPath, overwrite: true);
+                outPath = finalPath;
+
                 AppLogger.Info($"Save successful: {Path.GetFileName(outPath)}");
                 TbStatus.Text = string.Format(UiLabels.StatusSavedFormat, Path.GetFileName(outPath));
                 System.Media.SystemSounds.Exclamation.Play();
@@ -1631,6 +1645,7 @@ namespace miPDFsign
             catch (Exception ex)
             {
                 AppLogger.Error($"Save failed: {Path.GetFileName(outPath)}", ex);
+                try { if (File.Exists(tempWorkPath)) File.Delete(tempWorkPath); } catch { }
                 BtnSave.IsEnabled  = true;
                 BtnClear.IsEnabled = false;
                 TbStatus.Text      = "";

@@ -10,6 +10,29 @@
 
 ---
 
+## Installation
+
+**Download:** the signed installer from the [latest release](https://github.com/Mibuw/miPDFsign-Community/releases/latest).
+
+**winget:**
+```powershell
+winget install Mibuw.miPDFsignCommunity
+```
+
+**Chocolatey:**
+```powershell
+choco install mipdfsign-community
+```
+
+**Silent / unattended** (Inno Setup — for automation & deployment):
+```powershell
+miPDFsignCommunity_Setup_1.0.0.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+```
+
+Installs **side-by-side** with the commercial miPDFsign edition (separate AppId & folder).
+
+---
+
 ## Features
 
 - **Handwritten signature capture** on all pen-based, Windows-Ink-capable devices (tablets, notebooks, Surface, etc.) including pressure and timing data – no Wintab driver required

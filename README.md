@@ -4,7 +4,7 @@
 
 # miPDFsign Community
 
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) [![GitHub release](https://img.shields.io/github/v/release/Mibuw/miPDFsign-Community)](https://github.com/Mibuw/miPDFsign-Community/releases/latest)
+[![GitHub release](https://img.shields.io/github/v/release/Mibuw/miPDFsign-Community)](https://github.com/Mibuw/miPDFsign-Community/releases/latest) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) [![winget](https://img.shields.io/winget/v/Mibuw.miPDFsignCommunity?label=winget)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/m/Mibuw/miPDFsignCommunity) [![Chocolatey](https://img.shields.io/chocolatey/v/mipdfsign-community?label=chocolatey)](https://community.chocolatey.org/packages/mipdfsign-community)
 
 **miPDFsign Community** is the free, open-source (**AGPL-3.0**) edition of miPDFsign — a .NET 8 WPF application for signature tablets. It captures handwritten signatures together with biometric pressure data and embeds them as a **PAdES signature** into PDF documents. It uses the **iText** PDF engine (AGPL).
 

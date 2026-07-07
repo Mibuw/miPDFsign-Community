@@ -24,7 +24,7 @@ ArchitecturesInstallIn64BitMode =
 ; Output
 OutputDir               = output
 OutputBaseFilename      = miPDFsignCommunity_Setup_{#MyAppVersion}
-SetupIconFile           = ..\Assets\miPDFsign.ico
+SetupIconFile           = ..\Assets\miPDFsignCommunity.ico
 Compression             = lzma2/ultra64
 SolidCompression        = yes
 
@@ -35,7 +35,7 @@ ShowLanguageDialog      = no
 
 ; Uninstall
 UninstallDisplayName    = {#MyAppName}
-UninstallDisplayIcon    = {app}\miPDFsign.ico
+UninstallDisplayIcon    = {app}\miPDFsignCommunity.ico
 
 ; Require admin rights for Program Files install
 PrivilegesRequired      = admin
@@ -69,7 +69,7 @@ Source: "{#MyPublishDir}\*"; \
   Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; App icon – needed for Add/Remove Programs entry
-Source: "..\Assets\miPDFsign.ico"; \
+Source: "..\Assets\miPDFsignCommunity.ico"; \
   DestDir: "{app}"; \
   Flags: ignoreversion
 

@@ -165,7 +165,7 @@
                 MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
             <Grid>
                 <!-- App logo (top-left) -->
-                <Image Source="/Assets/miPDFsign_logo.png"
+                <Image Source="/Assets/miPDFsignCommunity_logo.png"
                        Width="24" Height="24"
                        HorizontalAlignment="Left" VerticalAlignment="Center"
                        Margin="14,0,0,0"

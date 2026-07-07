@@ -20,7 +20,7 @@
     <FileVersion>1.0.0.0</FileVersion>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <Product>miPDFsign Community</Product>
-    <ApplicationIcon>Assets\miPDFsign.ico</ApplicationIcon>
+    <ApplicationIcon>Assets\miPDFsignCommunity.ico</ApplicationIcon>
     <StartupObject>miPDFsign.App</StartupObject>
     <!-- Self-contained deployment (no .NET runtime prerequisite on the target machine). -->
     <SelfContained>true</SelfContained>
@@ -41,8 +41,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="Assets\miPDFsign_logo.png" />
-    <None Include="Assets\miPDFsign.ico">
+    <Resource Include="Assets\miPDFsignCommunity_logo.png" />
+    <None Include="Assets\miPDFsignCommunity.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>

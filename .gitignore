@@ -1,0 +1,31 @@
+## Build output
+[Bb]in/
+[Oo]bj/
+[Pp]ublish/
+build/
+_Build/
+
+## Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+## NuGet
+*.nupkg
+packages/
+
+## Inno Setup output (installer artifacts)
+Setup/output/
+*.exe
+
+## OS
+Thumbs.db
+.DS_Store
+
+## Backup / temp files
+*.bak
+*.tmp
+*~

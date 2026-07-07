@@ -1,0 +1,128 @@
+<Window x:Class="miPDFsign.SignatureTypeDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Choose signature type"
+        Width="440" MinHeight="300"
+        SizeToContent="Height"
+        WindowStyle="ToolWindow"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner"
+        Background="#F2F2F7">
+
+    <Window.Resources>
+        <Style x:Key="CardBorder" TargetType="Border">
+            <Setter Property="Background"       Value="White"/>
+            <Setter Property="CornerRadius"     Value="10"/>
+            <Setter Property="BorderBrush"      Value="#C7C7CC"/>
+            <Setter Property="BorderThickness"  Value="1"/>
+            <Setter Property="Padding"          Value="16,12"/>
+            <Setter Property="Margin"           Value="0,0,0,10"/>
+        </Style>
+        <Style x:Key="OptionTitle" TargetType="TextBlock">
+            <Setter Property="FontSize"   Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#1C1C1E"/>
+        </Style>
+        <Style x:Key="OptionSub" TargetType="TextBlock">
+            <Setter Property="FontSize"   Value="12"/>
+            <Setter Property="Foreground" Value="#6C6C70"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin"     Value="0,2,0,0"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock x:Name="TbHeader" Grid.Row="0" Text="Choose signature type"
+                   FontSize="17" FontWeight="Bold" Foreground="#1C1C1E"
+                   Margin="0,0,0,16"/>
+
+        <!-- Options -->
+        <StackPanel Grid.Row="1">
+
+            <!-- QES -->
+            <Border Style="{StaticResource CardBorder}"
+                    x:Name="CardQes"
+                    MouseLeftButtonDown="CardQes_Click"
+                    Cursor="Hand">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <RadioButton x:Name="RbQes" Grid.Column="0"
+                                 GroupName="SigType"
+                                 VerticalAlignment="Center"
+                                 Margin="0,0,12,0"
+                                 Checked="RbQes_Checked"/>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock x:Name="TbQesTitle" Style="{StaticResource OptionTitle}"
+                                   Text="ID-Austria (QES)"/>
+                        <TextBlock x:Name="TbQesSub" Style="{StaticResource OptionSub}"
+                                   Text="Qualified Electronic Signature via A-Trust Security Layer"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- FES -->
+            <Border Style="{StaticResource CardBorder}"
+                    x:Name="CardFes"
+                    MouseLeftButtonDown="CardFes_Click"
+                    Cursor="Hand">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <RadioButton x:Name="RbFes" Grid.Column="0"
+                                 GroupName="SigType"
+                                 VerticalAlignment="Top"
+                                 Margin="0,2,12,0"
+                                 IsChecked="True"
+                                 Checked="RbFes_Checked"/>
+                    <StackPanel Grid.Column="1">
+                        <TextBlock x:Name="TbFesTitle" Style="{StaticResource OptionTitle}"
+                                   Text="Self-signed (FES)"/>
+                        <TextBlock x:Name="TbFesSub" Style="{StaticResource OptionSub}"
+                                   Text="Advanced signature with self-signed certificate"/>
+                        <TextBlock x:Name="TbFesNameLabel" Style="{StaticResource OptionSub}"
+                                   Text="Signer name:" Margin="0,8,0,2"/>
+                        <TextBox x:Name="TbName"
+                                 Height="32" Padding="8,4"
+                                 FontSize="13"
+                                 BorderBrush="#C7C7CC" BorderThickness="1"
+                                 Background="White"
+                                 TextChanged="TbName_TextChanged"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+        </StackPanel>
+
+        <!-- Buttons -->
+        <Grid Grid.Row="2" Margin="0,4,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button x:Name="BtnCancel" Grid.Column="0" Content="Cancel"
+                    Height="38" FontSize="13"
+                    Background="White" BorderBrush="#C7C7CC" BorderThickness="1"
+                    IsCancel="True"
+                    Click="BtnCancel_Click" Cursor="Hand"/>
+            <Button Grid.Column="2" x:Name="BtnOk"
+                    Content="Next  →"
+                    Height="38" Padding="20,0" FontSize="13" FontWeight="SemiBold"
+                    Background="#1A6B3A" Foreground="White" BorderThickness="0"
+                    IsDefault="True"
+                    Click="BtnOk_Click" Cursor="Hand"/>
+        </Grid>
+    </Grid>
+</Window>

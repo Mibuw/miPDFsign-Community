@@ -1,0 +1,81 @@
+{
+  // miPDFsign UI labels – English
+  // This file can be adjusted without recompiling.
+  // Any missing key falls back to the built-in English defaults.
+
+  // ── Title bar ─────────────────────────────────────────────────────
+  "AppTitle":           "miPDFsign",
+  "TitleBarFormat":     "miPDFsign  –  {0}",
+
+  // ── Toolbar buttons ───────────────────────────────────────────────
+  "BtnPrev":            "◀",
+  "BtnNext":            "▶",
+  "BtnClose":           "✕",
+
+  "BtnNextSigIcon":     "✍",
+  "BtnNextSig":         "Next signature",
+
+  "BtnClearIcon":       "✕",
+  "BtnClear":           "Clear",
+
+  "BtnSaveIcon":        "💾",
+  "BtnSave":            "Save",
+
+  // ── Status bar ────────────────────────────────────────────────────
+  "StatusLoading":               "⏳  Loading document …",
+  "StatusSaving":                "⏳  Saving …",
+  "StatusSavedFormat":           "✓  {0}",
+  "SaveDialogTitle":             "Save signed document as",
+  "SaveDialogFilter":            "PDF document (*.pdf)|*.pdf",
+  "StatusMissingRequired1":      "⚠  1 required field not yet signed",
+  "StatusMissingRequiredN":      "⚠  {0} required fields not yet signed",
+  "StatusFreehandHint":          "Please sign on the document",
+  "StatusQesAborted":            "ID-Austria signing cancelled.",
+  "StatusQesAddingTimestamp":    "Adding signature timestamp…",
+  "StatusQesFetchingRevocation": "Fetching revocation data…",
+  "StatusQesAddingArchive":      "Creating archive timestamp…",
+
+  // ── ID-Austria window ─────────────────────────────────────────────
+  "IdAustriaWindowTitle":     "ID-Austria signature",
+  "IdAustriaInstruction":     "Please sign with ID-Austria in the view below.",
+  "IdAustriaConnecting":      "Connecting to A-Trust…",
+  "IdAustriaSubmitting":      "Submitting form data…",
+  "IdAustriaProcessing":      "Processing signature…",
+  "IdAustriaSuccess":         "✓ Signature successful – saving document…",
+  "IdAustriaUrlOpened":       "Opened: {0}",
+  "IdAustriaStartError":      "Error starting ID-Austria signing:\n{0}",
+  "IdAustriaStartErrorTitle": "ID-Austria error",
+  "IdAustriaParseError":      "The signature response could not be read.",
+  "IdAustriaDecodeError":     "The CMS signature could not be decoded.",
+  "IdAustriaErrorCode":       "A-Trust error code: {0}",
+  "IdAustriaNotRecognized":   "The ID-Austria signature was not recognized.\n{0}",
+  "IdAustriaNoSignature":     "No CMSSignature element found in the response.",
+  "IdAustriaErrorPrefix":     "✗ {0}",
+  "IdAustriaBtnCancel":       "Cancel",
+
+  // ── Signature type dialog ─────────────────────────────────────────
+  "DlgSigTypeTitle":        "Choose signature type",
+  "DlgSigTypeHeader":       "Choose signature type",
+  "DlgSigTypeQesTitle":     "ID-Austria (QES)",
+  "DlgSigTypeQesSub":       "Qualified Electronic Signature via A-Trust Security Layer",
+  "DlgSigTypeFesTitle":     "Self-signed (FES)",
+  "DlgSigTypeFesSub":       "Advanced signature with a self-signed certificate",
+  "DlgSigTypeFesNameLabel": "Signer name:",
+  "DlgSigTypeBtnCancel":    "Cancel",
+  "DlgSigTypeBtnOk":        "Continue  →",
+
+  // ── Signature field overlays ──────────────────────────────────────
+  "SigLabelActive":     "✎  Sign now",
+  "SigBtnSign":         "✎  Sign",
+  "SigBtnConfirm":      "✓  Done",
+  "SigBtnRetry":        "↺  Retry",
+  "SigBtnCancel":       "✕  Cancel",
+
+  // ── Message boxes ─────────────────────────────────────────────────
+  "MsgLoadError":           "The PDF could not be loaded:\n{0}",
+  "MsgLoadErrorTitle":      "Error",
+  "MsgMissingFields":       "The following required fields have not been signed yet:\n{0}",
+  "MsgMissingFieldsTitle":  "Required fields missing",
+  "MsgSaveError":           "Error while saving:\n{0}",
+  "MsgSaveErrorTitle":      "Error"
+}

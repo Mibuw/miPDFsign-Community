@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    miPDFsign Community – free/open-source edition (AGPL-3.0).
+    PDF engine: iText (AGPL). This is a separate product from the commercial
+    Syncfusion-based miPDFsign; do NOT merge iText-linked code back into that product.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>x86</PlatformTarget>
+    <Platforms>x64;x86</Platforms>
+    <AssemblyName>miPDFsignCommunity</AssemblyName>
+    <RootNamespace>miPDFsign</RootNamespace>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <Product>miPDFsign Community</Product>
+    <ApplicationIcon>Assets\miPDFsign.ico</ApplicationIcon>
+    <StartupObject>miPDFsign.App</StartupObject>
+    <!-- Self-contained deployment (no .NET runtime prerequisite on the target machine). -->
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- External UI label files (per language) – editable without recompiling.
+         The active language is chosen from the OS UI culture; English is the fallback. -->
+    <Content Include="miPDFsign.ui-labels.en.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <Content Include="miPDFsign.ui-labels.de.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\miPDFsign_logo.png" />
+    <None Include="Assets\miPDFsign.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- PDFium for rendering PDF pages to images -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.28" />
+    <PackageReference Include="PdfiumViewer" Version="2.13.0" />
+    <PackageReference Include="PdfiumViewer.Native.x86.v8-xfa" Version="2018.4.8.256" />
+    <PackageReference Include="PdfiumViewer.Native.x86_64.v8-xfa" Version="2018.4.8.256" />
+    <!-- iText (AGPL-3.0) for PDF form handling, stamping and PAdES signing -->
+    <PackageReference Include="itext" Version="9.6.0" />
+    <PackageReference Include="itext.bouncy-castle-adapter" Version="9.6.0" />
+    <!-- BouncyCastle for custom CMS / PAdES signing with biometric signed attributes -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
+    <!-- App.config / appSettings support -->
+    <PackageReference Include="System.Configuration.ConfigurationManager" Version="8.0.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <SignTool>"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x86\signtool.exe"</SignTool>
+  </PropertyGroup>
+
+  <Target Name="SignBuild" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="$(SignTool) sign /tr http://time.certum.pl /td sha256 /fd sha256 /n &quot;Wolfgang Mitterbucher&quot; &quot;$(TargetPath)&quot; &quot;$(TargetDir)$(TargetName).exe&quot;" ContinueOnError="true" />
+  </Target>
+
+  <Target Name="SignPublish" AfterTargets="Publish" Condition="'$(Configuration)' == 'Release'">
+    <Exec Command="$(SignTool) sign /tr http://time.certum.pl /td sha256 /fd sha256 /n &quot;Wolfgang Mitterbucher&quot; &quot;$(PublishDir)$(TargetName).dll&quot; &quot;$(PublishDir)$(TargetName).exe&quot;" ContinueOnError="true" />
+  </Target>
+
+</Project>

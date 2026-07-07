@@ -29,3 +29,6 @@ Thumbs.db
 *.bak
 *.tmp
 *~
+
+# Internal AI-assistant project doc – not for the public repo
+CLAUDE.md

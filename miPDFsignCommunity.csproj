@@ -16,9 +16,9 @@
     <Platforms>x64;x86</Platforms>
     <AssemblyName>miPDFsignCommunity</AssemblyName>
     <RootNamespace>miPDFsign</RootNamespace>
-    <Version>1.0.0</Version>
-    <FileVersion>1.0.0.0</FileVersion>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <Version>1.0.1</Version>
+    <FileVersion>1.0.1.0</FileVersion>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
     <Product>miPDFsign Community</Product>
     <ApplicationIcon>Assets\miPDFsignCommunity.ico</ApplicationIcon>
     <StartupObject>miPDFsign.App</StartupObject>

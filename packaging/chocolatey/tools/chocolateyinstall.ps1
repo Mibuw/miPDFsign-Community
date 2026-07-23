@@ -3,9 +3,9 @@ $ErrorActionPreference = 'Stop'
 $packageArgs = @{
   packageName    = 'mipdfsign-community'
   fileType       = 'exe'
-  url            = 'https://github.com/Mibuw/miPDFsign-Community/releases/download/v1.0.0/miPDFsignCommunity_Setup_1.0.0.exe'
+  url            = 'https://github.com/Mibuw/miPDFsign-Community/releases/download/v1.0.1/miPDFsignCommunity_Setup_1.0.1.exe'
   softwareName   = 'miPDFsign Community*'
-  checksum       = 'A0AB7B934C834B77944E7A231BC3720FD747A4DF30435345F0A70E8187E3BEB1'
+  checksum       = 'AE0EFCAD7754C55057B0B94A4CB3919A7FBA2C5BA7AA400C666FC6A43F3910C0'
   checksumType   = 'sha256'
   # Inno Setup silent switches
   silentArgs     = '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-'

@@ -50,6 +50,6 @@ if errorlevel 1 (
 echo.
 echo ============================================
 echo  Done!
-echo  Installer: Setup\output\miPDFsignCommunity_Setup_1.0.0.exe
+echo  Installer: Setup\output\miPDFsignCommunity_Setup_1.0.1.exe
 echo ============================================
 pause

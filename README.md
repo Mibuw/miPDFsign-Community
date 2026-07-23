@@ -137,7 +137,7 @@ Behaviour is controlled via `App.config` in the install folder. Key settings:
 | `SaveAsDialog` | `true` | `true` = show a "Save As" dialog after signing; `false` = save directly into `TargetDirectory`. |
 | `TargetDirectory` | *(empty)* | Destination folder when `SaveAsDialog=false` (created if needed; empty = the source document's folder). Environment variables are expanded. |
 | `UseTimestamp` | `true` | Enable/disable **RFC-3161 timestamping** (see below). |
-| `TimestampServers` | *(built-in)* | `;`-separated list of TSA URLs, tried in order. Empty = built-in defaults (GlobalSign, Sectigo, Entrust). A-Trust example: `http://tsa.a-trust.at/tsa`. |
+| `TimestampServers` | *(built-in)* | `;`-separated list of TSA URLs, tried in order. Empty = built-in defaults (BOSA, ACCV). A-Trust example: `http://tsa.a-trust.at/tsa`. |
 | `BiometricCertPath` / `BiometricCertPassword` | *(empty)* | PFX used to encrypt the biometric data. Empty = auto-generate `<DocumentName>_bioCert.pfx` next to the signed document. |
 | `LogFile`, `LogLevel`, `LogRolling`, … | see file | Logging: path, level (`DEBUG`/`INFO`/`WARN`/`ERROR`), daily rolling. |
 | `ForcePortraitOrientation` | `true` | Rotate the tablet screen to portrait on start and restore it on exit. |

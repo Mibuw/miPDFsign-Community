@@ -148,9 +148,8 @@ namespace miPDFsign.Helpers
         // Built-in fallback TSA list – used when App.config "TimestampServers" is empty.
         private static readonly string[] DefaultTsaUrls =
         {
-            "http://timestamp.globalsign.com/tsa/r6advanced1",          // GlobalSign R6, SHA-256
-            "http://timestamp.sectigo.com/",                            // Sectigo (Comodo), SHA-256
-            "http://timestamp.entrust.net/TSS/RFC3161sha2TS",           // Entrust, SHA-256
+            "http://tsa.belgium.be/connect",       // BOSA (BE, QTSP: FPS Policy and Support), SHA-256
+            "http://tss.accv.es:8318/tsa",         // ACCV (ES, Generalitat Valenciana), SHA-256
         };
 
         /// <summary>

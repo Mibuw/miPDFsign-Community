@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>mipdfsign-community</id>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packageSourceUrl>https://github.com/Mibuw/miPDFsign-Community/tree/main/packaging/chocolatey</packageSourceUrl>
     <owners>Mibuw</owners>
     <title>miPDFsign Community</title>
@@ -27,7 +27,7 @@ Installs side-by-side with the commercial miPDFsign edition. A commercial editio
 additional features (inbound/outbound plugin architecture, archive/DMS connectors, priority
 support) is available on request.
     </description>
-    <releaseNotes>https://github.com/Mibuw/miPDFsign-Community/releases/tag/v1.0.0</releaseNotes>
+    <releaseNotes>https://github.com/Mibuw/miPDFsign-Community/releases/tag/v1.0.1</releaseNotes>
   </metadata>
   <files>
     <file src="tools\**" target="tools" />

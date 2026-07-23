@@ -1,5 +1,5 @@
 #define MyAppName      "miPDFsign Community"
-#define MyAppVersion   "1.0.0"
+#define MyAppVersion   "1.0.1"
 #define MyAppPublisher "Wolfgang Mitterbucher"
 #define MyAppExeName   "miPDFsignCommunity.exe"
 #define MyPublishDir   "publish"

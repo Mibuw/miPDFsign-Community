@@ -10,15 +10,9 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
 
-using SD          = System.Drawing;
-using SDD         = System.Drawing.Drawing2D;
-using SDImaging   = System.Drawing.Imaging;
-
-using iText.Forms.Form.Element;
-using iText.IO.Image;
-using iText.Kernel.Geom;
-using iText.Kernel.Pdf;
-using iText.Signatures;
+using MiPdf;
+using MiPdf.Images;
+using MiPdf.Signatures;
 
 using SysPath = System.IO.Path;
 
@@ -34,7 +28,6 @@ using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Crypto.Operators;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Math;
-using Org.BouncyCastle.Ocsp;
 using Org.BouncyCastle.OpenSsl;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.Tsp;
@@ -49,7 +42,7 @@ namespace miPDFsign.Helpers
 {
     public static class PdfCertSigner
     {
-        // (refactor June 2026: single native-Syncfusion incremental signing path)
+        // (November 2026: PDF side on miPDFlib — deferred signing with our own BouncyCastle CMS)
         // ----------------------------------------------------------------
         //  Public types
         // ----------------------------------------------------------------
@@ -81,9 +74,8 @@ namespace miPDFsign.Helpers
         /// <summary>
         /// A single point of a signature ink stroke, expressed in <b>appearance-box</b>
         /// coordinates: top-left origin, Y growing downwards, units = PDF points,
-        /// range [0..PdfW] × [0..PdfH]. These map 1:1 onto a Syncfusion signature
-        /// appearance <see cref="Syncfusion.Pdf.Graphics.PdfGraphics"/> surface, so the
-        /// strokes can be drawn as transparent vector paths (no opaque PNG needed).
+        /// range [0..PdfW] × [0..PdfH]. They are drawn into the signature appearance with
+        /// miPDFlib's <see cref="InkRenderer"/> as transparent vector paths (no opaque PNG needed).
         /// </summary>
         public readonly struct AppearancePoint
         {
@@ -146,10 +138,12 @@ namespace miPDFsign.Helpers
             new DerObjectIdentifier("1.3.6.1.4.1.53892.1.1");
 
         // Built-in fallback TSA list – used when App.config "TimestampServers" is empty.
+        // Both are freely usable, EU-qualified (eIDAS) timestamp authorities on the EU Trusted List,
+        // so the resulting PAdES-T/LTA timestamps validate as qualified in the EU DSS validator.
         private static readonly string[] DefaultTsaUrls =
         {
-            "http://tsa.belgium.be/connect",       // BOSA (BE, QTSP: FPS Policy and Support), SHA-256
-            "http://tss.accv.es:8318/tsa",         // ACCV (ES, Generalitat Valenciana), SHA-256
+            "http://tsa.belgium.be/connect",                            // BOSA (BE, QTSP: FPS Policy and Support), SHA-256
+            "http://tss.accv.es:8318/tsa",                              // ACCV (ES, Generalitat Valenciana), SHA-256
         };
 
         /// <summary>
@@ -393,14 +387,13 @@ namespace miPDFsign.Helpers
         }
 
         // ----------------------------------------------------------------
-        //  Private: sign one PDF field (iText incremental / append mode)
+        //  Private: sign one PDF field
         //
-        //  Strategy (iText, replacing the former Syncfusion path):
-        //    PdfSigner in append mode reserves a /Contents slot and hands the byte-range
-        //    content to an IExternalSignatureContainer. Our container builds the full PAdES
-        //    CMS (BouncyCastle: ESS SigningCertificateV2, biometric OID, RFC-3161 timestamp)
-        //    and returns it. iText writes it into /Contents and computes /ByteRange. Existing
-        //    signatures stay valid because append mode never rewrites earlier bytes.
+        //  Strategy (miPDFlib deferred signing):
+        //    PrepareExternalSignature appends an incremental revision with the signature
+        //    field, its appearance and an empty /Contents slot of CmsSlotSize bytes.
+        //    We build the full PAdES CMS (BouncyCastle: biometric OID, ESS, TSA) over the
+        //    byte-range content and CompleteExternalSignature writes it into /Contents.
         // ----------------------------------------------------------------
 
         private static byte[] SignFieldIncremental(
@@ -421,49 +414,40 @@ namespace miPDFsign.Helpers
             byte[] encBio = HybridEncrypt(rawBio, bioPubKey, random);
             AppLogger.Info($"    Biometric data: {req.BioPoints.Count} point(s), {rawBio.Length}B raw, {encBio.Length}B encrypted");
 
-            var container = new PadesCmsContainer(keyPair.Private, cert, encBio, random);
+            string signerCn = req.FieldName;
+            try
+            {
+                string dnStr = cert.SubjectDN.ToString();
+                if (dnStr.StartsWith("CN=", StringComparison.OrdinalIgnoreCase))
+                    signerCn = dnStr[3..].Trim();
+            }
+            catch { }
 
             string tmpOrig = pdfPath + ".orig_tmp";
             File.Move(pdfPath, tmpOrig, overwrite: true);
+
             try
             {
-                using (var reader    = new PdfReader(tmpOrig))
-                using (var outStream = new FileStream(pdfPath, FileMode.Create, FileAccess.Write))
-                {
-                    // Append mode: iText adds a new incremental revision, so the /ByteRange of
-                    // every previously-applied signature still points at unchanged bytes.
-                    var signer = new PdfSigner(reader, outStream,
-                        new StampingProperties().UseAppendMode());
+                byte[] origBytes = File.ReadAllBytes(tmpOrig);
 
-                    var props = new SignerProperties()
-                        .SetFieldName(req.FieldName)
-                        .SetReason("Tablet signature")
-                        .SetLocation("POS")
-                        .SetPageNumber(req.PageNum)
-                        .SetPageRect(new Rectangle(req.PdfX, req.PdfY, req.PdfW, req.PdfH));
-
-                    var appearance = BuildSignatureAppearance(req);
-                    if (appearance != null) props.SetSignatureAppearance(appearance);
-
-                    signer.SetSignerProperties(props);
-                    signer.SignExternalContainer(container, CmsSlotSize);
-                }
-
-                byte[] realCms = container.BuiltCms
-                    ?? throw new InvalidOperationException(
-                        "SignFieldIncremental: container produced no CMS");
+                // miPDFlib always signs as an incremental update: the original bytes stay
+                // untouched, so the /ByteRange of every previously-applied signature still
+                // points at unchanged bytes and stays valid.
+                var (finalPdf, realCms) = MiPdfSign(
+                    origBytes, req, signerCn, keyPair, cert, encBio, random);
 
                 // SubFilter sanity-check
                 {
-                    byte[] finalPdf = File.ReadAllBytes(pdfPath);
-                    string pdfText  = Encoding.Latin1.GetString(finalPdf);
-                    int etsiCount   = CountOccurrences(pdfText, "ETSI.CAdES.detached");
-                    AppLogger.Info($"    SubFilter: ETSI.CAdES.detached×{etsiCount}");
+                    string pdfText = Encoding.Latin1.GetString(finalPdf);
+                    int etsiCount  = CountOccurrences(pdfText, "ETSI.CAdES.detached");
+                    int pkcs7Count = CountOccurrences(pdfText, "adbe.pkcs7.detached");
+                    AppLogger.Info($"    SubFilter: ETSI.CAdES.detached×{etsiCount}  adbe.pkcs7.detached×{pkcs7Count}");
                     if (etsiCount == 0)
                         AppLogger.Warn("    *** ETSI.CAdES.detached NOT FOUND — signature is NOT PAdES!");
-                    AppLogger.Info($"    Signed PDF written: {finalPdf.Length} bytes");
                 }
 
+                File.WriteAllBytes(pdfPath, finalPdf);
+                AppLogger.Info($"    Signed PDF written: {finalPdf.Length} bytes");
                 return realCms;
             }
             catch (Exception ex)
@@ -480,177 +464,100 @@ namespace miPDFsign.Helpers
         }
 
         // ----------------------------------------------------------------
-        //  IExternalSignatureContainer — builds our PAdES CMS via BouncyCastle
+        //  MiPdfSign — every field (incremental update, own CMS)
         // ----------------------------------------------------------------
 
-        private sealed class PadesCmsContainer : IExternalSignatureContainer
+        private static (byte[] finalPdf, byte[] cms) MiPdfSign(
+            byte[] origBytes,
+            FieldSignRequest req,
+            string signerCn,
+            AsymmetricCipherKeyPair keyPair,
+            BcX509Certificate cert,
+            byte[] encBio,
+            SecureRandom random)
         {
-            private readonly AsymmetricKeyParameter _key;
-            private readonly BcX509Certificate      _cert;
-            private readonly byte[]                 _encBio;
-            private readonly SecureRandom           _rng;
+            var options = SignatureOptions(origBytes, req, "Tablet signature", signerCn);
+            AppLogger.Debug($"    MiPdfSign: field='{req.FieldName}' rect={options.Rectangle} (PAdES, incremental)");
 
-            /// <summary>The CMS produced by the last <see cref="Sign"/> call (fed to AddLtv).</summary>
-            public byte[]? BuiltCms { get; private set; }
+            // Step 1: incremental revision with field, appearance and an empty /Contents slot.
+            // Format = PAdES → /SubFilter /ETSI.CAdES.detached.
+            var prepared = PdfSigner.PrepareExternalSignature(
+                origBytes, options, certificate: null, containerSize: CmsSlotSize);
 
-            public PadesCmsContainer(AsymmetricKeyParameter key, BcX509Certificate cert,
-                byte[] encBio, SecureRandom rng)
-            { _key = key; _cert = cert; _encBio = encBio; _rng = rng; }
+            // Step 2: our own PAdES CMS over the byte-range content (biometric attribute + TSA).
+            byte[] toSign   = prepared.GetSignedData();
+            byte[] builtCms = BuildPadesCms(toSign, keyPair.Private, cert, encBio, random);
+            AppLogger.Info($"    MiPdfSign: signing {toSign.Length}B → CMS {builtCms.Length}B");
 
-            public void ModifySigningDictionary(PdfDictionary signDic)
-            {
-                signDic.Put(PdfName.Filter,    new PdfName("Adobe.PPKLite"));
-                signDic.Put(PdfName.SubFilter, new PdfName("ETSI.CAdES.detached"));
-            }
+            // Step 3: embed the CMS into /Contents.
+            byte[] finalPdf = PdfSigner.CompleteExternalSignature(prepared, builtCms);
 
-            public byte[] Sign(Stream rangeStream)
-            {
-                byte[] data;
-                using (var ms = new MemoryStream()) { rangeStream.CopyTo(ms); data = ms.ToArray(); }
-                AppLogger.Debug($"    Signing byte range: {data.Length}B");
-                BuiltCms = BuildPadesCms(data, _key, _cert, _encBio, _rng);
-                AppLogger.Info($"    CMS built ({BuiltCms.Length}B)");
-                return BuiltCms;
-            }
-        }
-
-        // ----------------------------------------------------------------
-        //  IExternalSignatureContainer — captures bytes-to-sign for QES (deferred)
-        // ----------------------------------------------------------------
-
-        private sealed class QesCaptureContainer : IExternalSignatureContainer
-        {
-            /// <summary>The byte-range content the external signer (A-Trust) must sign.</summary>
-            public byte[] Captured { get; private set; } = Array.Empty<byte>();
-
-            public void ModifySigningDictionary(PdfDictionary signDic)
-            {
-                signDic.Put(PdfName.Filter,    new PdfName("Adobe.PPKLite"));
-                signDic.Put(PdfName.SubFilter, new PdfName("ETSI.CAdES.detached"));
-            }
-
-            public byte[] Sign(Stream rangeStream)
-            {
-                using var ms = new MemoryStream();
-                rangeStream.CopyTo(ms);
-                Captured = ms.ToArray();
-                // Return empty → iText leaves a zero-filled /Contents slot of the reserved
-                // size, which InjectQesCms overwrites with the real CMS from A-Trust.
-                return Array.Empty<byte>();
-            }
-        }
-
-        // ----------------------------------------------------------------
-        //  Signature appearance — transparent vector ink (rasterised to PNG)
-        // ----------------------------------------------------------------
-
-        /// <summary>
-        /// Builds an iText signature appearance from the request's ink. When
-        /// <see cref="FieldSignRequest.AppearanceStrokes"/> is present the strokes are
-        /// rasterised to a transparent PNG (GDI+, background-thread safe — unlike WPF);
-        /// otherwise the legacy <see cref="FieldSignRequest.AppearancePng"/> is used.
-        /// Returns null for an invisible signature field.
-        /// </summary>
-        private static SignatureFieldAppearance? BuildSignatureAppearance(FieldSignRequest req)
-        {
-            byte[]? png = RenderAppearanceStrokesToPng(req) ?? req.AppearancePng;
-            if (png == null) return null;
-
-            var appearance = new SignatureFieldAppearance(SignerProperties.IGNORED_ID);
-            appearance.SetContent(ImageDataFactory.Create(png));
-            return appearance;
+            AppLogger.Info($"    MiPdfSign done: {finalPdf.Length}B");
+            return (finalPdf, builtCms);
         }
 
         /// <summary>
-        /// Rasterises the pressure-sensitive ink strokes (appearance-box coordinates:
-        /// top-left origin, Y down, PDF points) into a transparent PNG using GDI+
-        /// (System.Drawing) — which, unlike WPF, is safe to call from a background thread.
-        /// Returns null when there are no vector strokes.
+        /// Signature options for <paramref name="req"/>: field name, page, visible rectangle
+        /// and the transparent ink appearance.
         /// </summary>
-        private static byte[]? RenderAppearanceStrokesToPng(FieldSignRequest req)
+        private static PdfSignatureOptions SignatureOptions(
+            byte[] pdf, FieldSignRequest req, string reason, string? signerName)
         {
-            var strokes = req.AppearanceStrokes;
-            if (strokes == null || strokes.Count == 0) return null;
+            // req.PdfX/PdfY are bottom-left PDF points relative to the visible page (CropBox);
+            // miPDFlib expects absolute user-space coordinates.
+            PdfRectangle crop;
+            using (var doc = PdfDocument.Open(pdf))
+                crop = doc.GetPage(req.PageNum).CropBox;
 
-            const float minPenW = 0.35f;   // PDF points at pressure 0
-            const float maxPenW = 2.40f;   // PDF points at pressure 1
-            const float scale   = 4f;      // pixels per PDF point (appearance render resolution)
-            static float WidthFor(float pressure) =>
-                minPenW + (maxPenW - minPenW) * Math.Clamp(pressure, 0f, 1f);
-
-            int w = Math.Max(1, (int)MathF.Ceiling(req.PdfW * scale));
-            int h = Math.Max(1, (int)MathF.Ceiling(req.PdfH * scale));
-
-            // On-screen ink colour (WPF Colors.DarkBlue = RGB 0,0,139).
-            var ink = SD.Color.FromArgb(255, 0, 0, 139);
-
-            using var bmp = new SD.Bitmap(w, h, SDImaging.PixelFormat.Format32bppArgb);
-            using (var g = SD.Graphics.FromImage(bmp))
+            return new PdfSignatureOptions
             {
-                g.SmoothingMode = SDD.SmoothingMode.AntiAlias;
-                g.Clear(SD.Color.Transparent);
-                using var brush = new SD.SolidBrush(ink);
+                FieldName        = req.FieldName,
+                PageNumber       = req.PageNum,
+                Rectangle        = PdfRectangle.FromSize(
+                    crop.Left + req.PdfX, crop.Bottom + req.PdfY, req.PdfW, req.PdfH),
+                Reason           = reason,
+                Location         = "POS",
+                SignerName       = signerName,
+                Format           = PdfSignatureFormat.PAdES,
+                SignatureCreator = "miPDFsign Community",
+                Appearance       = BuildAppearance(req),
+            };
+        }
 
-                foreach (var stroke in strokes)
+        // ----------------------------------------------------------------
+        //  Signature appearance — transparent vector ink
+        // ----------------------------------------------------------------
+
+        /// <summary>
+        /// Builds the signature appearance. When <see cref="FieldSignRequest.AppearanceStrokes"/>
+        /// is present the strokes are rendered as dark-blue, pressure-sensitive vector paths on a
+        /// fully transparent background (the underlying document text remains visible).
+        /// Otherwise it falls back to the legacy PNG image or draws nothing (empty field).
+        /// </summary>
+        private static PdfSignatureAppearance BuildAppearance(FieldSignRequest req)
+        {
+            var strokes = req.AppearanceStrokes?
+                .Where(s => s != null && s.Count > 0)
+                .Select(s => (IReadOnlyList<InkPoint>)s
+                    .Select(p => new InkPoint(p.X, p.Y, p.Pressure))
+                    .ToList())
+                .ToList();
+            PdfImage? png = req.AppearancePng is { Length: > 0 } bytes ? PdfImage.FromBytes(bytes) : null;
+
+            return new PdfSignatureAppearance
+            {
+                Text = "",   // ink only — no "Signed by" text strip
+                Draw = (canvas, w, h) =>
                 {
-                    if (stroke == null || stroke.Count == 0) continue;
-
-                    if (stroke.Count == 1)
-                    {
-                        float r = WidthFor(stroke[0].Pressure) * 0.5f * scale;
-                        g.FillEllipse(brush,
-                            stroke[0].X * scale - r, stroke[0].Y * scale - r, r * 2f, r * 2f);
-                        continue;
-                    }
-
-                    for (int i = 1; i < stroke.Count; i++)
-                    {
-                        float segPressure = (stroke[i - 1].Pressure + stroke[i].Pressure) * 0.5f;
-                        using var pen = new SD.Pen(ink, WidthFor(segPressure) * scale)
-                        {
-                            StartCap = SDD.LineCap.Round,
-                            EndCap   = SDD.LineCap.Round,
-                            LineJoin = SDD.LineJoin.Round,
-                        };
-                        g.DrawLine(pen,
-                            stroke[i - 1].X * scale, stroke[i - 1].Y * scale,
-                            stroke[i].X     * scale, stroke[i].Y     * scale);
-                    }
-                }
-            }
-
-            using var outMs = new MemoryStream();
-            bmp.Save(outMs, SDImaging.ImageFormat.Png);
-            return outMs.ToArray();
-        }
-
-        // ----------------------------------------------------------------
-        //  ByteRange parsing and CMS injection helpers
-        // ----------------------------------------------------------------
-
-        /// <summary>
-        /// Locates the last /ByteRange array in the PDF bytes (by text position).
-        /// Used by the QES placeholder/inject path and the LTA document-timestamp path,
-        /// where exactly one new /ByteRange is appended per incremental update.
-        /// </summary>
-        private static (long b0, long l0, long b1, long l1) ParseByteRange(byte[] pdfBytes)
-        {
-            // Read as Latin-1 so byte values map 1-to-1 to chars (no multi-byte expansion)
-            string text  = Encoding.Latin1.GetString(pdfBytes);
-            var matches  = Regex.Matches(text,
-                @"/ByteRange\s*\[\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*\]");
-
-            if (matches.Count == 0)
-                throw new InvalidOperationException("Could not find /ByteRange in PDF output");
-
-            // Take the last occurrence (most recent incremental revision)
-            var m = matches[^1];
-            return (
-                long.Parse(m.Groups[1].Value),
-                long.Parse(m.Groups[2].Value),
-                long.Parse(m.Groups[3].Value),
-                long.Parse(m.Groups[4].Value)
-            );
+                    if (strokes is { Count: > 0 })
+                        // Appearance-box coordinates have a top-left origin; 0.35..2.4 pt
+                        // stroke width by pressure, ink colour = WPF Colors.DarkBlue.
+                        InkRenderer.Draw(canvas, strokes, minWidth: 0.35, maxWidth: 2.4,
+                            topLeftHeight: h);
+                    else if (png != null)
+                        canvas.DrawImage(png, 0, 0, w, h);   // legacy fallback
+                },
+            };
         }
 
         private static int CountOccurrences(string haystack, string needle)
@@ -659,30 +566,6 @@ namespace miPDFsign.Helpers
             while ((idx = haystack.IndexOf(needle, idx, StringComparison.Ordinal)) >= 0)
             { count++; idx += needle.Length; }
             return count;
-        }
-
-        /// <summary>
-        /// Replaces the zero-byte /Contents placeholder with the real CMS bytes.
-        /// The hex content occupies bytes [b0+l0 .. b1) in the PDF — one byte for '<',
-        /// 2×CmsSlotSize hex chars, one byte for '>'.
-        /// </summary>
-        private static byte[] InjectCms(
-            byte[] pdf, byte[] cms, long b0, long l0, long b1)
-        {
-            // Hex-encode the CMS and pad to fill the slot exactly
-            int    hexLen  = (int)(b1 - b0 - l0 - 2); // subtract '<' and '>'
-            string cmsHex  = Convert.ToHexString(cms).ToLowerInvariant();
-            if (cmsHex.Length > hexLen)
-                throw new InvalidOperationException(
-                    $"CMS hex ({cmsHex.Length} chars) exceeds /Contents slot ({hexLen} chars)");
-            string padded  = cmsHex.PadRight(hexLen, '0');
-
-            byte[] result  = (byte[])pdf.Clone();
-            byte[] hexBytes = Encoding.ASCII.GetBytes(padded);
-
-            long hexOffset = b0 + l0 + 1; // +1 to skip the '<'
-            Array.Copy(hexBytes, 0L, result, hexOffset, hexBytes.Length);
-            return result;
         }
 
         // ----------------------------------------------------------------
@@ -758,8 +641,8 @@ namespace miPDFsign.Helpers
         //    2. Caller sends bytes-to-sign to A-Trust → receives CMS blob.
         //    3. InjectQesCms:       patches the /Contents slot with the real CMS.
         //
-        //  Same OverflowException fix applies: new PdfSignature(pdfDoc, page, null, name)
-        //  without assigning to existingField.Signature.
+        //  Both steps are miPDFlib's deferred signing (PrepareExternalSignature /
+        //  CompleteExternalSignature).
         // ----------------------------------------------------------------
 
         /// <summary>
@@ -780,734 +663,106 @@ namespace miPDFsign.Helpers
         {
             AppLogger.Info($"PdfCertSigner.PrepareQesSigning: field='{req.FieldName}' page={req.PageNum}");
 
-            byte[] captured = Array.Empty<byte>();
+            // The /Contents slot is CmsSlotSize bytes: A-Trust's CMS (with certificate chain)
+            // plus the signature-time-stamp added afterwards must fit into it.
+            byte[] origBytes = File.ReadAllBytes(pdfPath);
+            var options  = SignatureOptions(origBytes, req, "QES via ID-Austria", signerName: null);
+            var prepared = PdfSigner.PrepareExternalSignature(
+                origBytes, options, certificate: null, containerSize: CmsSlotSize);
 
-            // iText deferred signing: reserve a /Contents slot of CmsSlotSize and capture
-            // the byte-range content the external signer (A-Trust) must sign. The container
-            // returns empty, so /Contents is a zero-filled placeholder that InjectQesCms
-            // overwrites later with the real CMS. Append mode keeps existing signatures valid.
-            var capture = new QesCaptureContainer();
-            using (var reader = new PdfReader(pdfPath))
-            using (var outMs  = new MemoryStream())
-            {
-                var signer = new PdfSigner(reader, outMs,
-                    new StampingProperties().UseAppendMode());
+            placeholderPdf  = prepared.PreparedPdf;
+            byte[] captured = prepared.GetSignedData();
 
-                var props = new SignerProperties()
-                    .SetFieldName(req.FieldName)
-                    .SetReason("QES via ID-Austria")
-                    .SetLocation("POS")
-                    .SetPageNumber(req.PageNum)
-                    .SetPageRect(new Rectangle(req.PdfX, req.PdfY, req.PdfW, req.PdfH));
-
-                var appearance = BuildSignatureAppearance(req);
-                if (appearance != null) props.SetSignatureAppearance(appearance);
-
-                signer.SetSignerProperties(props);
-                signer.SignExternalContainer(capture, CmsSlotSize);
-
-                placeholderPdf = outMs.ToArray();
-            }
-            captured = capture.Captured;
-
-            // /SubFilter is already /ETSI.CAdES.detached because the signature was created
-            // with CryptographicStandard.CADES — no post-hoc byte patching is required.
-
+            var br = prepared.ByteRange;
             AppLogger.Info($"  PrepareQesSigning: captured {captured.Length} bytes-to-sign, " +
-                           $"placeholder PDF {placeholderPdf.Length} bytes");
-
-            // ── ByteRange sanity check + trim ─────────────────────────────
-            // Adobe reports "document was modified" if bytes exist outside /ByteRange.
-            // Some PDF writers (including Syncfusion) append trailing whitespace after
-            // %%EOF that is not covered by /ByteRange. Trim those bytes so that:
-            //   (a) A-Trust hashes exactly the byte-range content, and
-            //   (b) the injected PDF has no uncovered trailing bytes.
-            {
-                var (br0, brl0, br1, brl1) = ParseByteRange(placeholderPdf);
-                long covered = br1 + brl1;
-                AppLogger.Info($"  ByteRange: [{br0},{brl0},{br1},{brl1}]  " +
-                               $"covered={covered}  pdfLen={placeholderPdf.Length}  " +
-                               $"slot={br1 - br0 - brl0 - 2} hex chars");
-
-                if (covered < placeholderPdf.Length)
-                {
-                    AppLogger.Warn($"  *** /ByteRange does NOT cover the last " +
-                                   $"{placeholderPdf.Length - covered} bytes — trimming placeholder!");
-                    placeholderPdf = placeholderPdf[..(int)covered];
-                }
-                else if (covered == placeholderPdf.Length)
-                {
-                    AppLogger.Info("  /ByteRange covers entire placeholder PDF ✓");
-                }
-                else
-                {
-                    // covered > pdfLen: /ByteRange claims more bytes than exist — corrupt PDF
-                    AppLogger.Warn($"  *** /ByteRange extends {covered - placeholderPdf.Length} bytes " +
-                                   "PAST end of PDF — placeholder may be corrupt!");
-                }
-
-            }
-
+                           $"placeholder PDF {placeholderPdf.Length} bytes, " +
+                           $"ByteRange [{br[0]},{br[1]},{br[2]},{br[3]}], slot {prepared.ContainerSize}B");
             return captured;
         }
 
         /// <summary>
-        /// Patches the /Contents slot of <paramref name="placeholderPdf"/> with the real
-        /// <paramref name="cms"/> blob and returns the completed PDF bytes.
+        /// Writes the real <paramref name="cms"/> blob into the /Contents slot of the
+        /// signature field <paramref name="fieldName"/> in <paramref name="placeholderPdf"/>
+        /// and returns the completed PDF bytes.
         /// </summary>
-        public static byte[] InjectQesCms(byte[] placeholderPdf, byte[] cms)
+        public static byte[] InjectQesCms(byte[] placeholderPdf, string fieldName, byte[] cms)
         {
-            var (b0, l0, b1, l1) = ParseByteRange(placeholderPdf);
-            long covered = b1 + l1;
-            int  hexLen  = (int)(b1 - b0 - l0 - 2);
-            int  cmsHex  = cms.Length * 2;
-
-            if (covered != placeholderPdf.Length)
-                AppLogger.Warn($"InjectQesCms: ByteRange covers only {covered}/{placeholderPdf.Length} bytes – Adobe may report 'document modified'");
-            if (cmsHex > hexLen)
-                AppLogger.Warn($"InjectQesCms: CMS {cms.Length}B exceeds slot {hexLen / 2}B – signature will be truncated!");
-
-            byte[] result = InjectCms(placeholderPdf, cms, b0, l0, b1);
+            byte[] result = PdfSigner.CompleteExternalSignature(placeholderPdf, fieldName, cms);
             AppLogger.Info($"InjectQesCms: done ({result.Length}B, CMS {cms.Length}B)");
             return result;
         }
 
         // ----------------------------------------------------------------
-        //  PAdES-LT: embed CRL / OCSP in a DSS incremental update
+        //  PAdES-LT / LTA via miPDFlib (PdfLtv)
         // ----------------------------------------------------------------
 
+        // One revocation source for the process: caches CRLs, OCSP responses and AIA issuers.
+        // CRLs above 5 MB (e.g. A-Trust's 143 MB CRL) are skipped; OCSP is used instead.
+        private static readonly HttpRevocationSource _revocation = new();
+
         /// <summary>
-        /// Upgrades a PAdES Baseline-B signed PDF to PAdES Baseline-LT by appending
-        /// a Document Security Store (DSS) as an unsigned incremental update.
-        /// The DSS embeds CRL and/or OCSP revocation data so the signature can be
-        /// validated even after the signing certificate expires.
+        /// Upgrades the signatures of <paramref name="signedPdf"/> to PAdES Baseline-LT by
+        /// appending a Document Security Store (DSS) as an unsigned incremental update.
+        /// The DSS embeds the certificates (signer + TSA chains, missing issuers via AIA) and
+        /// their OCSP responses / CRLs, so the signatures can be validated offline even after
+        /// the signing certificate expires. Never fails: on any problem the input is returned.
         /// </summary>
-        public static async Task<byte[]> AddLtv(byte[] signedPdf, byte[] cms)
+        public static Task<byte[]> AddLtv(byte[] signedPdf) => Task.Run(() =>
         {
             AppLogger.Info("PdfCertSigner.AddLtv: fetching revocation data for PAdES-LT");
-
-            // ── 1. Parse CMS certificate chain ───────────────────────────────
-            CmsSignedData cmsData;
-            try { cmsData = new CmsSignedData(cms); }
-            catch (Exception ex)
-            {
-                AppLogger.Warn($"AddLtv: CMS parse failed: {ex.Message}");
-                return signedPdf;
-            }
-
-            var allCerts = cmsData.GetCertificates()
-                .EnumerateMatches(null)
-                .ToList();
-
-            AppLogger.Info($"AddLtv: {allCerts.Count} cert(s) in QES chain");
-
-            // ── 1b. Also collect TSA certificates from signature-time-stamp ─────
-            //  The signature-time-stamp unsigned attribute embeds a full RFC 3161
-            //  TimeStampToken (CMS SignedData) which contains its own certificate
-            //  chain.  We must include those in the DSS so Adobe can validate the
-            //  timestamp chain even when its CRL distribution point is unreachable.
-            var sigTstOid = new DerObjectIdentifier("1.2.840.113549.1.9.16.2.14");
-            foreach (SignerInformation si in cmsData.GetSignerInfos().GetSigners())
-            {
-                var tstAttr = si.UnsignedAttributes?[sigTstOid];
-                if (tstAttr == null) continue;
-                foreach (Asn1Encodable attrVal in tstAttr.AttrValues)
-                {
-                    try
-                    {
-                        var tstToken  = new TimeStampToken(new CmsSignedData(attrVal.GetEncoded()));
-                        var tstCerts  = tstToken.GetCertificates().EnumerateMatches(null).ToList();
-                        allCerts.AddRange(tstCerts);
-                        AppLogger.Info($"AddLtv: +{tstCerts.Count} cert(s) from signature-time-stamp TSA");
-                    }
-                    catch (Exception ex)
-                    {
-                        AppLogger.Warn($"AddLtv: signature-time-stamp cert extraction: {ex.Message}");
-                    }
-                }
-            }
-
-            if (allCerts.Count == 0)
-            {
-                AppLogger.Warn("AddLtv: no certificates found — skipping DSS");
-                return signedPdf;
-            }
-
-            AppLogger.Info($"AddLtv: {allCerts.Count} cert(s) total (QES + TSA chain)");
-
-            // ── 2. Fetch CRL / OCSP for each cert in the chain ───────────────
-            var crlBlobs  = new List<byte[]>();
-            var ocspBlobs = new List<byte[]>();
-
-            // Iterate over a snapshot — we may append issuer certs mid-loop
-            foreach (var cert in allCerts.ToList())
-            {
-                // CRL — download with size guard (some CDPs serve multi-MB files)
-                string? crlUrl = LtvGetCdpUrl(cert);
-                if (crlUrl != null)
-                {
-                    try
-                    {
-                        // Read headers first to catch oversized CRLs before they OOM us
-                        using var crlResp = await _http.GetAsync(crlUrl,
-                            HttpCompletionOption.ResponseHeadersRead);
-                        if (!crlResp.IsSuccessStatusCode)
-                        {
-                            AppLogger.Warn($"AddLtv: CRL HTTP {(int)crlResp.StatusCode} from {crlUrl}");
-                        }
-                        else
-                        {
-                            long? crlSize = crlResp.Content.Headers.ContentLength;
-                            if (crlSize > 5_000_000)
-                            {
-                                AppLogger.Warn($"AddLtv: CRL too large ({crlSize}B) at {crlUrl} — skipping");
-                            }
-                            else
-                            {
-                                byte[] crl = await crlResp.Content.ReadAsByteArrayAsync();
-                                crlBlobs.Add(crl);
-                                AppLogger.Info($"AddLtv: CRL {crl.Length}B ← {crlUrl}");
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        AppLogger.Warn($"AddLtv: CRL fetch failed ({crlUrl}): {ex.Message}");
-                    }
-                }
-
-                // OCSP
-                string? ocspUrl = LtvGetOcspUrl(cert);
-                if (ocspUrl != null)
-                {
-                    BcX509Certificate? issuer = LtvFindIssuer(cert, allCerts);
-
-                    if (issuer == null)
-                    {
-                        // Download issuer from AIA id-ad-caIssuers
-                        string? caUrl = LtvGetCaIssuersUrl(cert);
-                        if (caUrl != null)
-                        {
-                            try
-                            {
-                                byte[] der = await _http.GetByteArrayAsync(caUrl);
-                                issuer = new X509CertificateParser().ReadCertificate(der);
-                                allCerts.Add(issuer);
-                                AppLogger.Info($"AddLtv: issuer cert downloaded from {caUrl}");
-                            }
-                            catch (Exception ex)
-                            {
-                                AppLogger.Warn($"AddLtv: issuer download failed: {ex.Message}");
-                            }
-                        }
-                    }
-
-                    if (issuer != null)
-                    {
-                        byte[]? ocsp = await LtvRequestOcsp(cert, issuer, ocspUrl);
-                        if (ocsp != null) ocspBlobs.Add(ocsp);
-                    }
-                }
-            }
-
-            if (crlBlobs.Count == 0 && ocspBlobs.Count == 0)
-            {
-                AppLogger.Warn("AddLtv: no revocation data obtained — PDF returned without DSS");
-                return signedPdf;
-            }
-
-            AppLogger.Info($"AddLtv: building DSS — {allCerts.Count} cert(s), " +
-                           $"{crlBlobs.Count} CRL(s), {ocspBlobs.Count} OCSP(s)");
-
-            // ── 3. Append DSS as incremental update ───────────────────────────
             try
             {
-                return LtvBuildDssUpdate(signedPdf, allCerts, crlBlobs, ocspBlobs);
+                var lt = PdfLtv.AddValidationData(signedPdf, new LtvOptions { RevocationSource = _revocation });
+                LogLtvWarnings("AddLtv", lt.Warnings);
+                AppLogger.Info($"AddLtv: DSS — {lt.CertificatesAdded} cert(s), {lt.OcspResponsesAdded} OCSP(s), " +
+                               $"{lt.CrlsAdded} CRL(s), complete={lt.IsComplete} ({signedPdf.Length}B → {lt.Pdf.Length}B)");
+                return lt.Pdf;
             }
             catch (Exception ex)
             {
                 AppLogger.Warn($"AddLtv: DSS build failed: {ex.Message} — returning PDF without DSS");
                 return signedPdf;
             }
-        }
-
-        // ── AIA / CDP URL extractors ──────────────────────────────────────────
-
-        private static string? LtvGetCdpUrl(BcX509Certificate cert)
-        {
-            try
-            {
-                var raw = cert.GetExtensionValue(X509Extensions.CrlDistributionPoints);
-                if (raw == null) return null;
-                var cdp = CrlDistPoint.GetInstance(Asn1Object.FromByteArray(raw.GetOctets()));
-                foreach (var dp in cdp.GetDistributionPoints())
-                {
-                    if (dp.DistributionPointName?.Type != DistributionPointName.FullName)
-                        continue;
-                    foreach (GeneralName gn in GeneralNames
-                             .GetInstance(dp.DistributionPointName.Name).GetNames())
-                    {
-                        if (gn.TagNo == GeneralName.UniformResourceIdentifier)
-                            return gn.Name.ToString();
-                    }
-                }
-            }
-            catch { }
-            return null;
-        }
-
-        // id-ad-ocsp  : 1.3.6.1.5.5.7.48.1
-        private static readonly DerObjectIdentifier OidAdOcsp       = new("1.3.6.1.5.5.7.48.1");
-        // id-ad-caIssuers: 1.3.6.1.5.5.7.48.2
-        private static readonly DerObjectIdentifier OidAdCaIssuers  = new("1.3.6.1.5.5.7.48.2");
-
-        private static string? LtvGetOcspUrl(BcX509Certificate cert)     => LtvGetAiaUrl(cert, OidAdOcsp);
-        private static string? LtvGetCaIssuersUrl(BcX509Certificate cert) => LtvGetAiaUrl(cert, OidAdCaIssuers);
-
-        private static string? LtvGetAiaUrl(BcX509Certificate cert, DerObjectIdentifier accessMethod)
-        {
-            try
-            {
-                var raw = cert.GetExtensionValue(X509Extensions.AuthorityInfoAccess);
-                if (raw == null) return null;
-                var aia = AuthorityInformationAccess.GetInstance(
-                    Asn1Object.FromByteArray(raw.GetOctets()));
-                foreach (var desc in aia.GetAccessDescriptions())
-                {
-                    if (desc.AccessMethod.Equals(accessMethod) &&
-                        desc.AccessLocation.TagNo == GeneralName.UniformResourceIdentifier)
-                        return desc.AccessLocation.Name.ToString();
-                }
-            }
-            catch { }
-            return null;
-        }
-
-        private static BcX509Certificate? LtvFindIssuer(
-            BcX509Certificate cert, IList<BcX509Certificate> pool)
-        {
-            foreach (var c in pool)
-                if (!c.Equals(cert) && cert.IssuerDN.Equivalent(c.SubjectDN))
-                    return c;
-            return null;
-        }
-
-        // ── OCSP request ──────────────────────────────────────────────────────
-
-        private static async Task<byte[]?> LtvRequestOcsp(
-            BcX509Certificate cert, BcX509Certificate issuer, string url)
-        {
-            try
-            {
-#pragma warning disable CS0618 // CertificateID(string,X509Certificate,BigInteger) deprecated in BC 2.x; no non-deprecated equivalent without DigestCalculatorProvider wiring
-                var id  = new CertificateID(CertificateID.HashSha1, issuer, cert.SerialNumber);
-#pragma warning restore CS0618
-                var gen = new OcspReqGenerator();
-                gen.AddRequest(id);
-                byte[] reqBytes = gen.Generate().GetEncoded();
-
-                using var body = new ByteArrayContent(reqBytes);
-                body.Headers.ContentType = new MediaTypeHeaderValue("application/ocsp-request");
-
-                var resp = await _http.PostAsync(url, body);
-                if (!resp.IsSuccessStatusCode)
-                {
-                    AppLogger.Warn($"AddLtv: OCSP HTTP {(int)resp.StatusCode} from {url}");
-                    return null;
-                }
-                byte[] ocsp = await resp.Content.ReadAsByteArrayAsync();
-                AppLogger.Info($"AddLtv: OCSP {ocsp.Length}B ← {url}");
-                return ocsp;
-            }
-            catch (Exception ex)
-            {
-                AppLogger.Warn($"AddLtv: OCSP failed ({url}): {ex.Message}");
-                return null;
-            }
-        }
-
-        // ── DSS incremental update builder ────────────────────────────────────
-
-        private static byte[] LtvBuildDssUpdate(
-            byte[] pdf,
-            List<BcX509Certificate> certs,
-            List<byte[]> crls,
-            List<byte[]> ocsps)
-        {
-            string pdfStr = Encoding.Latin1.GetString(pdf);
-
-            // Locate last "startxref N %%EOF"
-            var sxm = Regex.Match(pdfStr,
-                @"startxref\s+(\d+)\s+%%EOF", RegexOptions.RightToLeft);
-            if (!sxm.Success)
-                throw new InvalidOperationException("DSS: startxref not found in PDF");
-            long prevXref = long.Parse(sxm.Groups[1].Value);
-
-            // Locate last trailer dict → /Root and /Size
-            var trm = Regex.Match(pdfStr,
-                @"trailer\s*<<([\s\S]+?)>>", RegexOptions.RightToLeft);
-            if (!trm.Success)
-                throw new InvalidOperationException("DSS: trailer not found in PDF");
-            string trDict = trm.Groups[1].Value;
-
-            var rootM = Regex.Match(trDict, @"/Root\s+(\d+)\s+\d+\s+R");
-            if (!rootM.Success)
-                throw new InvalidOperationException("DSS: /Root not found in trailer");
-            int catNum = int.Parse(rootM.Groups[1].Value);
-
-            var szM = Regex.Match(trDict, @"/Size\s+(\d+)");
-            if (!szM.Success)
-                throw new InvalidOperationException("DSS: /Size not found in trailer");
-            int curSize = int.Parse(szM.Groups[1].Value);
-
-            // Extract existing catalog dict content (nested-<< aware)
-            string existingCat = LtvExtractDictContent(pdfStr, catNum);
-            // Remove any prior /DSS entry before re-adding
-            existingCat = Regex.Replace(existingCat,
-                @"/DSS\s+\d+\s+\d+\s+R\s*", "", RegexOptions.Singleline).Trim();
-
-            // Assign new object numbers
-            int nextNum  = curSize;
-            int dssNum   = nextNum++;
-            var certNums = certs.Select(_ => nextNum++).ToList();
-            var crlNums  = crls.Select(_ => nextNum++).ToList();
-            var ocspNums = ocsps.Select(_ => nextNum++).ToList();
-            int newSize  = nextNum;
-
-            // Build incremental update
-            using var ms = new MemoryStream();
-            ms.Write(pdf);
-            if (pdf[^1] != '\n') LtvWriteL1(ms, "\n");
-
-            var xref = new Dictionary<int, long>();
-
-            // Stream objects: certs
-            for (int i = 0; i < certs.Count; i++)
-            { xref[certNums[i]] = ms.Position; LtvWriteStreamObj(ms, certNums[i], certs[i].GetEncoded()); }
-
-            // Stream objects: CRLs
-            for (int i = 0; i < crls.Count; i++)
-            { xref[crlNums[i]] = ms.Position; LtvWriteStreamObj(ms, crlNums[i], crls[i]); }
-
-            // Stream objects: OCSP responses
-            for (int i = 0; i < ocsps.Count; i++)
-            { xref[ocspNums[i]] = ms.Position; LtvWriteStreamObj(ms, ocspNums[i], ocsps[i]); }
-
-            // DSS dictionary
-            xref[dssNum] = ms.Position;
-            var dss = new StringBuilder($"{dssNum} 0 obj\n<<\n/Type /DSS\n");
-            if (certNums.Count > 0)
-                dss.Append($"/Certs [{string.Join(" ", certNums.Select(n => $"{n} 0 R"))}]\n");
-            if (crlNums.Count > 0)
-                dss.Append($"/CRLs [{string.Join(" ", crlNums.Select(n => $"{n} 0 R"))}]\n");
-            if (ocspNums.Count > 0)
-                dss.Append($"/OCSPs [{string.Join(" ", ocspNums.Select(n => $"{n} 0 R"))}]\n");
-            dss.Append(">>\nendobj\n");
-            LtvWriteL1(ms, dss.ToString());
-
-            // Updated catalog (same object number → overrides previous version via xref)
-            xref[catNum] = ms.Position;
-            LtvWriteL1(ms, $"{catNum} 0 obj\n<<\n{existingCat}\n/DSS {dssNum} 0 R\n>>\nendobj\n");
-
-            // Cross-reference table
-            long xrefOff = ms.Position;
-            LtvWriteL1(ms, "xref\n");
-            foreach (var (start, offs) in LtvBuildXrefSubsections(xref))
-            {
-                LtvWriteL1(ms, $"{start} {offs.Count}\n");
-                foreach (long off in offs)
-                    LtvWriteL1(ms, $"{off:D10} 00000 n \n");  // 20-byte entry (SP LF as EOL)
-            }
-
-            // Trailer + startxref + %%EOF
-            LtvWriteL1(ms, $"trailer\n<< /Size {newSize} /Root {catNum} 0 R /Prev {prevXref} >>\n");
-            LtvWriteL1(ms, $"startxref\n{xrefOff}\n%%EOF\n");
-
-            byte[] result = ms.ToArray();
-            AppLogger.Info($"AddLtv: DSS appended ({pdf.Length}B → {result.Length}B)");
-            return result;
-        }
+        });
 
         /// <summary>
-        /// Extracts the inner content of the last "N 0 obj &lt;&lt; ... &gt;&gt; endobj" for the
-        /// given object number, using a depth counter to handle nested dictionaries correctly.
+        /// Adds a Document Timestamp (RFC 3161, /SubFilter /ETSI.RFC3161) plus the validation
+        /// data of its TSA chain, upgrading the PDF to PAdES Baseline-LTA.
+        /// Call after <see cref="AddLtv"/> so the DSS is already covered by the timestamp.
         /// </summary>
-        private static string LtvExtractDictContent(string pdfStr, int objNum)
+        public static Task<byte[]> AddArchiveTimestamp(byte[] ltPdf) => Task.Run(() =>
         {
-            // Find the last occurrence of "N \d obj"
-            var m = Regex.Match(pdfStr,
-                $@"\b{objNum}\s+\d+\s+obj\b",
-                RegexOptions.RightToLeft);
-            if (!m.Success) return "/Type /Catalog";
-
-            int pos = m.Index + m.Length;
-            // Skip whitespace
-            while (pos < pdfStr.Length && pdfStr[pos] <= ' ') pos++;
-
-            if (pos + 1 >= pdfStr.Length || pdfStr[pos] != '<' || pdfStr[pos + 1] != '<')
-                return "/Type /Catalog";
-
-            // Walk nested << >> with depth counter
-            int depth = 0, end = pos;
-            while (end < pdfStr.Length - 1)
+            if (!TimestampEnabled)
             {
-                if (pdfStr[end] == '<' && pdfStr[end + 1] == '<')      { depth++; end += 2; }
-                else if (pdfStr[end] == '>' && pdfStr[end + 1] == '>') { depth--; end += 2; if (depth == 0) break; }
-                else end++;
+                AppLogger.Info("AddArchiveTimestamp: timestamping disabled (UseTimestamp=false) – no LTA");
+                return ltPdf;
             }
-            // Return content between outer << and >>
-            return pdfStr[(pos + 2)..(end - 2)].Trim();
-        }
 
-        private static List<(int Start, List<long> Offsets)> LtvBuildXrefSubsections(
-            Dictionary<int, long> entries)
-        {
-            var sorted = entries.OrderBy(kv => kv.Key).ToList();
-            var result = new List<(int, List<long>)>();
-            List<long>? cur = null;
-            int start = 0, prev = -2;
-            foreach (var (n, off) in sorted)
-            {
-                if (cur == null || n != prev + 1) { if (cur != null) result.Add((start, cur)); cur = new(); start = n; }
-                cur.Add(off);
-                prev = n;
-            }
-            if (cur != null) result.Add((start, cur));
-            return result;
-        }
-
-        private static void LtvWriteStreamObj(Stream s, int num, byte[] data)
-        {
-            LtvWriteL1(s, $"{num} 0 obj\n<< /Length {data.Length} >>\nstream\n");
-            s.Write(data);
-            LtvWriteL1(s, "\nendstream\nendobj\n");
-        }
-
-        private static void LtvWriteL1(Stream s, string text) =>
-            s.Write(Encoding.Latin1.GetBytes(text));
-
-        // ----------------------------------------------------------------
-        //  PAdES-LTA: document timestamp (RFC 3161 over the whole document)
-        // ----------------------------------------------------------------
-
-        /// <summary>
-        /// Adds a Document Timestamp (RFC 3161) as a manually-constructed PDF incremental
-        /// update, upgrading the PDF to PAdES Baseline-LTA.
-        /// Call after <see cref="AddLtv"/> so the DSS is already present in the hash input.
-        /// </summary>
-        public static async Task<byte[]> AddArchiveTimestamp(byte[] ltPdf)
-        {
             AppLogger.Info("PdfCertSigner.AddArchiveTimestamp: adding document timestamp (PAdES-LTA)");
             try
             {
-                return await LtaBuildDocTimestamp(ltPdf);
+                var tsa = FailoverTimestampClient.FromUrls(TsaUrls);
+                var lta = PdfLtv.MakeLta(ltPdf, tsa, new LtvOptions { RevocationSource = _revocation });
+                LogLtvWarnings("AddArchiveTimestamp", lta.Warnings);
+                if (lta.Level != PadesLevel.BLTA)
+                {
+                    AppLogger.Warn("AddArchiveTimestamp: no document timestamp obtained — returning without LTA");
+                    return ltPdf;
+                }
+                AppLogger.Info($"AddArchiveTimestamp: PAdES-LTA complete ({ltPdf.Length}B → {lta.Pdf.Length}B)");
+                return lta.Pdf;
             }
             catch (Exception ex)
             {
                 AppLogger.Warn($"AddArchiveTimestamp: failed ({ex.Message}) — returning without LTA");
                 return ltPdf;
             }
-        }
+        });
 
-        /// <summary>
-        /// Builds a minimal PDF incremental update containing an RFC 3161 document timestamp.
-        /// Bypasses Syncfusion entirely so we control /SubFilter /ETSI.RFC3161 directly.
-        /// </summary>
-        private static async Task<byte[]> LtaBuildDocTimestamp(byte[] ltPdf)
+        private static void LogLtvWarnings(string step, IReadOnlyList<string> warnings)
         {
-            // 16 KB slot ample for any RFC 3161 token; hex = 2× = 32 768 chars
-            const int SlotBytes = 16_384;
-            const int HexLen    = SlotBytes * 2;
-
-            // ── 1. Parse existing PDF ───────────────────────────────────────
-            string pdfStr = Encoding.Latin1.GetString(ltPdf);
-
-            var sxm = Regex.Match(pdfStr, @"startxref\s+(\d+)\s+%%EOF", RegexOptions.RightToLeft);
-            if (!sxm.Success) throw new InvalidOperationException("LTA: startxref not found");
-            long prevXref = long.Parse(sxm.Groups[1].Value);
-
-            var trm = Regex.Match(pdfStr, @"trailer\s*<<([\s\S]+?)>>", RegexOptions.RightToLeft);
-            if (!trm.Success) throw new InvalidOperationException("LTA: trailer not found");
-            string trDict = trm.Groups[1].Value;
-
-            var rootM = Regex.Match(trDict, @"/Root\s+(\d+)\s+\d+\s+R");
-            if (!rootM.Success) throw new InvalidOperationException("LTA: /Root not found");
-            int catNum = int.Parse(rootM.Groups[1].Value);
-
-            var szM = Regex.Match(trDict, @"/Size\s+(\d+)");
-            if (!szM.Success) throw new InvalidOperationException("LTA: /Size not found");
-            int curSize = int.Parse(szM.Groups[1].Value);
-
-            string catContent = LtvExtractDictContent(pdfStr, catNum);
-
-            // ── 2. Assign new object numbers ────────────────────────────────
-            int sigNum   = curSize;       // signature dictionary
-            int annotNum = curSize + 1;   // widget annotation / field
-            int newSize  = curSize + 2;
-
-            // ── 3. Locate existing AcroForm ─────────────────────────────────
-            var acroRefM = Regex.Match(catContent, @"/AcroForm\s+(\d+)\s+\d+\s+R");
-            int acroNum  = acroRefM.Success ? int.Parse(acroRefM.Groups[1].Value) : 0;
-
-            string acroCore = "";          // AcroForm content minus /Fields
-            string existingFields = "";
-
-            if (acroNum > 0)
-            {
-                string acroContent = LtvExtractDictContent(pdfStr, acroNum);
-                var fieldsM = Regex.Match(acroContent, @"/Fields\s*\[([\s\S]*?)\]");
-                if (fieldsM.Success) existingFields = fieldsM.Groups[1].Value.Trim();
-                acroCore = Regex.Replace(acroContent, @"/Fields\s*\[[\s\S]*?\]", "").Trim();
-            }
-
-            string newFieldsList = string.IsNullOrWhiteSpace(existingFields)
-                ? $"{annotNum} 0 R"
-                : $"{existingFields} {annotNum} 0 R";
-
-            // ── 4. Date string ───────────────────────────────────────────────
-            string dateStr = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-
-            // ── 5. Build incremental update ──────────────────────────────────
-            // We use a fixed-width ByteRange placeholder (36 chars) so we can
-            // patch it in-place after computing the real byte offsets.
-            const string BrPlaceholder = "[0 0000000000 0000000000 0000000000]"; // 36 chars
-
-            using var ms = new MemoryStream();
-            ms.Write(ltPdf);
-            if (ltPdf[^1] != '\n') LtvWriteL1(ms, "\n");
-
-            var xref = new Dictionary<int, long>();
-
-            // ── Signature dictionary ─────────────────────────────────────────
-            xref[sigNum] = ms.Position;
-
-            // Write everything up to AND INCLUDING the opening '<' of /Contents
-            string sigPrefix =
-                $"{sigNum} 0 obj\n" +
-                $"<<\n" +
-                $"/Type /Sig\n" +
-                $"/Filter /Adobe.PPKLite\n" +
-                $"/SubFilter /ETSI.RFC3161\n" +
-                $"/ByteRange {BrPlaceholder}\n" +
-                $"/Contents <";
-
-            LtvWriteL1(ms, sigPrefix);
-
-            // l0 = position of the '<' just written (= current pos − 1)
-            long l0 = ms.Position - 1;
-
-            // Write hex zeros — the /Contents placeholder
-            byte[] hexZeros = new byte[HexLen];
-            Array.Fill(hexZeros, (byte)'0');
-            ms.Write(hexZeros);
-
-            // Write closing '>'  →  b1 = position immediately after '>'
-            LtvWriteL1(ms, ">");
-            long b1 = ms.Position;
-
-            // Rest of signature dictionary
-            LtvWriteL1(ms, $"\n/M (D:{dateStr}+00'00')\n>>\nendobj\n");
-
-            // ── Widget annotation / signature field ──────────────────────────
-            xref[annotNum] = ms.Position;
-            LtvWriteL1(ms,
-                $"{annotNum} 0 obj\n" +
-                $"<< /FT /Sig /Type /Annot /Subtype /Widget" +
-                $" /Rect [0 0 0 0] /F 132" +
-                $" /T (ArchiveTimestamp) /V {sigNum} 0 R >>\n" +
-                $"endobj\n");
-
-            // ── Updated AcroForm ─────────────────────────────────────────────
-            if (acroNum > 0)
-            {
-                xref[acroNum] = ms.Position;
-                LtvWriteL1(ms,
-                    $"{acroNum} 0 obj\n" +
-                    $"<<\n{acroCore}\n/Fields [{newFieldsList}]\n>>\n" +
-                    $"endobj\n");
-            }
-
-            // ── Updated catalog ──────────────────────────────────────────────
-            // Strip the old /AcroForm reference; we re-add it pointing to the
-            // same object number (now updated above) or embed inline.
-            string catStripped = Regex.Replace(catContent,
-                @"/AcroForm\s+\d+\s+\d+\s+R", "", RegexOptions.Singleline).Trim();
-
-            xref[catNum] = ms.Position;
-            if (acroNum > 0)
-            {
-                LtvWriteL1(ms,
-                    $"{catNum} 0 obj\n<<\n{catStripped}\n/AcroForm {acroNum} 0 R\n>>\nendobj\n");
-            }
-            else
-            {
-                // AcroForm was inline or absent — embed inline in the updated catalog
-                string inlineAcro = $"<< /Fields [{newFieldsList}] >>";
-                string catNoAcro  = Regex.Replace(catStripped,
-                    @"/AcroForm\s*<<[\s\S]*?>>", "", RegexOptions.Singleline).Trim();
-                LtvWriteL1(ms,
-                    $"{catNum} 0 obj\n<<\n{catNoAcro}\n/AcroForm {inlineAcro}\n>>\nendobj\n");
-            }
-
-            // ── Cross-reference table ────────────────────────────────────────
-            long xrefOff = ms.Position;
-            LtvWriteL1(ms, "xref\n");
-            foreach (var (start, offs) in LtvBuildXrefSubsections(xref))
-            {
-                LtvWriteL1(ms, $"{start} {offs.Count}\n");
-                foreach (long off in offs)
-                    LtvWriteL1(ms, $"{off:D10} 00000 n \n");
-            }
-
-            // ── Trailer ──────────────────────────────────────────────────────
-            LtvWriteL1(ms, $"trailer\n<< /Size {newSize} /Root {catNum} 0 R /Prev {prevXref} >>\n");
-            LtvWriteL1(ms, $"startxref\n{xrefOff}\n%%EOF\n");
-
-            byte[] placeholder = ms.ToArray();
-            long   l1          = placeholder.Length - b1;
-
-            AppLogger.Info($"LtaBuildDocTimestamp: built {placeholder.Length}B " +
-                           $"[0,{l0},{b1},{l1}]");
-
-            // ── 6. Patch /ByteRange in-place ─────────────────────────────────
-            // BrPlaceholder and the replacement are both exactly 36 chars.
-            string brActual = $"[0 {l0:D10} {b1:D10} {l1:D10}]"; // also 36 chars
-            byte[] brOldBytes = Encoding.Latin1.GetBytes(BrPlaceholder);
-            byte[] brNewBytes = Encoding.Latin1.GetBytes(brActual);
-
-            bool brFound = false;
-            for (int i = ltPdf.Length; i <= placeholder.Length - brOldBytes.Length; i++)
-            {
-                bool ok = true;
-                for (int j = 0; j < brOldBytes.Length; j++)
-                    if (placeholder[i + j] != brOldBytes[j]) { ok = false; break; }
-                if (!ok) continue;
-                Buffer.BlockCopy(brNewBytes, 0, placeholder, i, brNewBytes.Length);
-                brFound = true;
-                break;
-            }
-            if (!brFound)
-                throw new InvalidOperationException("LTA: ByteRange placeholder not found after build");
-
-            // ── 7. Hash the signed regions ───────────────────────────────────
-            byte[] toHash = new byte[(int)(l0 + l1)];
-            Buffer.BlockCopy(placeholder, 0,       toHash, 0,       (int)l0);
-            Buffer.BlockCopy(placeholder, (int)b1, toHash, (int)l0, (int)l1);
-            byte[] docHash = DigestUtilities.CalculateDigest("SHA-256", toHash);
-
-            // ── 8. Request TSA token ─────────────────────────────────────────
-            byte[]? tsToken = await GetTsaTokenAsync(docHash);
-            if (tsToken == null)
-            {
-                AppLogger.Warn("LtaBuildDocTimestamp: no TSA token — returning without LTA");
-                return ltPdf;
-            }
-
-            // ── 9. Inject token into /Contents ───────────────────────────────
-            byte[] result = InjectCms(placeholder, tsToken, 0L, l0, b1);
-            AppLogger.Info($"AddArchiveTimestamp: PAdES-LTA complete " +
-                           $"({ltPdf.Length}B → {result.Length}B, token {tsToken.Length}B)");
-            return result;
+            foreach (var w in warnings)
+                AppLogger.Warn($"{step}: {w}");
         }
 
         /// <summary>Sends a SHA-256 hash to a TSA and returns the RFC 3161 token bytes.</summary>

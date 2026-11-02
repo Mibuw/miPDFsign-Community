@@ -7,26 +7,21 @@ attribution and redistribution obligations.
 
 | Component | Version | License | Copyright / Publisher |
 |---|---|---|---|
-| [iText](https://itextpdf.com/) | 9.6.0 | **AGPL-3.0** (or commercial) | © Apryse / iText Group NV |
+| [miPDFlib](https://github.com/Mibuw/miPDFlib) | 0.3.0 | Apache License 2.0 | © Wolfgang Mitterbucher |
+| Adobe Glyph List (subset, contained in miPDFlib) | – | BSD 3-Clause | © Adobe |
 | [BouncyCastle.Cryptography](https://www.bouncycastle.org/) | 2.6.2 | MIT (X11 style) | © Legion of the Bouncy Castle Inc. |
 | [PdfiumViewer](https://github.com/pvginkel/PdfiumViewer) | 2.13.0 | Apache License 2.0 | © Pieter van Ginkel |
 | PDFium (native, `PdfiumViewer.Native.*`) | 2018.4.8.256 | BSD 3-Clause | © Google Inc. / The Chromium Authors |
 | System.Drawing.Common | 8.0.28 | MIT | © .NET Foundation and Contributors |
 | System.Configuration.ConfigurationManager | 8.0.1 | MIT | © .NET Foundation and Contributors |
-
-> **Note on iText (AGPL):** iText is dual-licensed under **AGPL-3.0** or a commercial
-> license. Because miPDFsign Community links iText under the AGPL, the **entire application
-> is distributed under the AGPL-3.0** — the complete corresponding source must be made
-> available to recipients. To build a **closed-source** product on this code base instead,
-> a **commercial iText license** (and removal of any other AGPL obligations) is required.
-> See <https://itextpdf.com/how-buy>.
+| System.Security.Cryptography.Pkcs (dependency of miPDFlib) | 10.0.14 | MIT | © .NET Foundation and Contributors |
 
 ---
 
 ## MIT License
 
-Applies to **BouncyCastle.Cryptography**, **System.Drawing.Common**, and
-**System.Configuration.ConfigurationManager**.
+Applies to **BouncyCastle.Cryptography**, **System.Drawing.Common**,
+**System.Configuration.ConfigurationManager**, and **System.Security.Cryptography.Pkcs**.
 
 ```
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -52,7 +47,9 @@ SOFTWARE.
 
 ## BSD 3-Clause License
 
-Applies to the native **PDFium** (Google / The Chromium Authors).
+Applies to the native **PDFium** (Google / The Chromium Authors) and, with
+"Adobe" in place of "Google Inc.", to the **Adobe Glyph List** subset contained in
+miPDFlib (Copyright 2002-2019 Adobe).
 
 ```
 Redistribution and use in source and binary forms, with or without
@@ -84,7 +81,8 @@ POSSIBILITY OF SUCH DAMAGE.
 
 ## Apache License 2.0
 
-Applies to **PdfiumViewer** (© Pieter van Ginkel).
+Applies to **PdfiumViewer** (© Pieter van Ginkel) and **miPDFlib**
+(© Wolfgang Mitterbucher; NOTICE: "miPDFlib – Copyright 2026 Wolfgang Mitterbucher").
 
 This component is licensed under the Apache License, Version 2.0. The full
 license text is available at: https://www.apache.org/licenses/LICENSE-2.0

@@ -16,7 +16,7 @@ Description: |-
   miPDFsign Community is the free, open-source (AGPL-3.0) edition of miPDFsign, a .NET 8 WPF
   application for signature tablets. It captures handwritten signatures together with biometric
   pressure data and embeds them as PAdES signatures (Baseline B/T/LT/LTA) into PDF documents,
-  including QES via ID Austria. It uses the iText PDF engine. A commercial edition with
+  including QES via ID Austria. It uses the open-source PDF engine miPDFlib (Apache-2.0). A commercial edition with
   additional features is available on request.
 Moniker: mipdfsign-community
 Tags:

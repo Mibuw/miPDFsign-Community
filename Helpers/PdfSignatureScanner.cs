@@ -1,11 +1,11 @@
+using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
-using iText.Kernel.Pdf;
-using iText.Kernel.Pdf.Canvas.Parser;
-using iText.Kernel.Pdf.Canvas.Parser.Data;
-using iText.Kernel.Pdf.Canvas.Parser.Listener;
+using MiPdf;
+using MiPdf.Text;
 using miPDFsign.Models;
 
 namespace miPDFsign.Helpers
@@ -44,8 +44,7 @@ namespace miPDFsign.Helpers
         /// <summary>Returns signature fields only (backwards-compatible overload).</summary>
         public static List<SignatureFieldDescriptor> Scan(string pdfPath)
         {
-            using var reader = new PdfReader(pdfPath);
-            using var pdfDoc = new PdfDocument(reader);
+            using var pdfDoc = PdfDocument.Open(File.ReadAllBytes(pdfPath));
             return Scan(pdfDoc);
         }
 
@@ -58,7 +57,7 @@ namespace miPDFsign.Helpers
         /// </summary>
         public static ParsedFieldSet ScanAllFields(PdfDocument pdfDoc)
         {
-            int totalPages = pdfDoc.GetNumberOfPages();
+            int totalPages = pdfDoc.PageCount;
             AppLogger.Info($"PdfSignatureScanner: Starting scan ({totalPages} page(s))");
 
             var sigs       = new List<SignatureFieldDescriptor>();
@@ -67,16 +66,12 @@ namespace miPDFsign.Helpers
             var locDates   = new List<LocationDateFieldDescriptor>();
             var checkboxes = new List<ParsedCheckboxDescriptor>();
 
-            for (int p = 1; p <= totalPages; p++)
+            for (int p = 0; p < totalPages; p++)
             {
-                var page      = pdfDoc.GetPage(p);
-                var listener  = new ChunkListener();
-                var processor = new PdfCanvasProcessor(listener);
-                processor.ProcessPageContent(page);
+                var chunks = ExtractTextChunks(pdfDoc.Pages[p]);
+                AppLogger.Debug($"  Page {p + 1}: {chunks.Count} text chunk(s) extracted");
 
-                AppLogger.Debug($"  Page {p}: {listener.Chunks.Count} text chunk(s) extracted");
-
-                ScanPage(listener.Chunks, p - 1, sigs, locs, dates, locDates, checkboxes);
+                ScanPage(chunks, p, sigs, locs, dates, locDates, checkboxes);
             }
 
             AppLogger.Info($"PdfSignatureScanner: Scan complete – " +
@@ -84,6 +79,44 @@ namespace miPDFsign.Helpers
                 $"L={locs.Count}  LD={locDates.Count}");
 
             return new ParsedFieldSet(sigs, locs, dates, locDates, checkboxes);
+        }
+
+        // ----------------------------------------------------------------
+        //  miPDFlib text extraction – produces TextChunks in PDF space
+        //  (bottom-left origin, matching the original iText ChunkListener)
+        // ----------------------------------------------------------------
+
+        private static List<TextChunk> ExtractTextChunks(PdfPage page)
+        {
+            var result = new List<TextChunk>();
+            // The app's PDF space has its origin at the visible page's bottom-left corner.
+            var crop = page.CropBox;
+
+            try
+            {
+                // Word-level bounds, already in PDF user space (bottom-left origin).
+                foreach (var word in PdfTextExtractor.ExtractWords(page))
+                {
+                    if (string.IsNullOrEmpty(word.Text)) continue;
+                    result.Add(new TextChunk(word.Text,
+                        word.Bounds.Left - crop.Left, word.Bounds.Bottom - crop.Bottom));
+                }
+            }
+            catch (Exception ex)
+            {
+                // Fallback: plain-text extraction (no position data).
+                AppLogger.Warn($"  ExtractTextChunks: structured extraction failed ({ex.Message}), " +
+                               "falling back to plain text – field positions will be inaccurate");
+                try
+                {
+                    string plain = PdfTextExtractor.ExtractText(page);
+                    if (!string.IsNullOrEmpty(plain))
+                        result.Add(new TextChunk(plain, 0, 0));
+                }
+                catch { /* ignore */ }
+            }
+
+            return result;
         }
 
         // ----------------------------------------------------------------
@@ -192,31 +225,6 @@ namespace miPDFsign.Helpers
                 ry = entry.y;
             }
             return (rx, ry);
-        }
-
-        // ----------------------------------------------------------------
-        //  iText text extraction – produces TextChunks in PDF space
-        //  (bottom-left origin, matching the original iText ChunkListener)
-        // ----------------------------------------------------------------
-
-        private sealed class ChunkListener : IEventListener
-        {
-            private readonly List<TextChunk> _chunks = new();
-            public IReadOnlyList<TextChunk> Chunks => _chunks;
-
-            public void EventOccurred(IEventData data, EventType type)
-            {
-                if (type != EventType.RENDER_TEXT) return;
-                var info = (TextRenderInfo)data;
-                string text = info.GetText();
-                if (string.IsNullOrEmpty(text)) return;
-
-                var pt = info.GetBaseline().GetStartPoint();
-                _chunks.Add(new TextChunk(text, pt.Get(0), pt.Get(1)));
-            }
-
-            public ICollection<EventType> GetSupportedEvents() =>
-                new HashSet<EventType> { EventType.RENDER_TEXT };
         }
 
         // ── Text chunk ───────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using iText.Kernel.Pdf;
+using MiPdf;
 using miPDFsign.Models;
 
 namespace miPDFsign.Helpers
@@ -35,8 +35,7 @@ namespace miPDFsign.Helpers
         {
             AppLogger.Info($"PdfLoadHelper: Loading '{System.IO.Path.GetFileName(pdfPath)}'");
 
-            using var reader = new PdfReader(pdfPath);
-            using var pdfDoc = new PdfDocument(reader);
+            using var pdfDoc = PdfDocument.Open(pdfPath);
 
             var acroCheckboxes = PdfExporter.GetCheckboxes(pdfDoc);
             AppLogger.Debug($"  AcroForm checkboxes: {acroCheckboxes.Count}");
@@ -45,27 +44,15 @@ namespace miPDFsign.Helpers
             var signerName = PdfExporter.GetTextFieldValue(pdfDoc, "Name");
             AppLogger.Debug($"  Signer name field: '{signerName ?? "<null>"}'");
 
-            // Document title: try PDF metadata first, then known AcroForm field names
             string? docTitle = null;
-
-            var info = pdfDoc.GetDocumentInfo();
-            string? metaTitle = info?.GetTitle();
-            if (!string.IsNullOrWhiteSpace(metaTitle))
+            foreach (var fieldName in DocTitleFieldNames)
             {
-                docTitle = metaTitle.Trim();
-                AppLogger.Debug($"  Document title (PDF metadata): '{docTitle}'");
-            }
-            else
-            {
-                foreach (var fieldName in DocTitleFieldNames)
+                var val = PdfExporter.GetTextFieldValue(pdfDoc, fieldName);
+                if (!string.IsNullOrWhiteSpace(val))
                 {
-                    var val = PdfExporter.GetTextFieldValue(pdfDoc, fieldName);
-                    if (!string.IsNullOrWhiteSpace(val))
-                    {
-                        docTitle = val.Trim();
-                        AppLogger.Debug($"  Document title from field '{fieldName}': '{docTitle}'");
-                        break;
-                    }
+                    docTitle = val;
+                    AppLogger.Debug($"  Document title from field '{fieldName}': '{docTitle}'");
+                    break;
                 }
             }
 

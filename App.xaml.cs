@@ -11,8 +11,8 @@ namespace miPDFsign
         {
             base.OnStartup(e);
 
-            // No third-party license registration needed: this edition uses iText (AGPL-3.0),
-            // which requires no runtime license key.
+            // No third-party license registration needed: the PDF engine miPDFlib (Apache-2.0)
+            // requires no runtime license key.
             AppLogger.Initialize();
 
             // ── Parse command-line argument ──────────────────────────────

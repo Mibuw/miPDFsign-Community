@@ -2,8 +2,7 @@
 
   <!--
     miPDFsign Community – free/open-source edition (AGPL-3.0).
-    PDF engine: iText (AGPL). This is a separate product from the commercial
-    Syncfusion-based miPDFsign; do NOT merge iText-linked code back into that product.
+    PDF engine: miPDFlib (Apache-2.0). This is a separate product from the commercial miPDFsign.
   -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -16,9 +15,9 @@
     <Platforms>x64;x86</Platforms>
     <AssemblyName>miPDFsignCommunity</AssemblyName>
     <RootNamespace>miPDFsign</RootNamespace>
-    <Version>1.0.1</Version>
-    <FileVersion>1.0.1.0</FileVersion>
-    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <Version>1.1.0</Version>
+    <FileVersion>1.1.0.0</FileVersion>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
     <Product>miPDFsign Community</Product>
     <ApplicationIcon>Assets\miPDFsignCommunity.ico</ApplicationIcon>
     <StartupObject>miPDFsign.App</StartupObject>
@@ -54,9 +53,8 @@
     <PackageReference Include="PdfiumViewer" Version="2.13.0" />
     <PackageReference Include="PdfiumViewer.Native.x86.v8-xfa" Version="2018.4.8.256" />
     <PackageReference Include="PdfiumViewer.Native.x86_64.v8-xfa" Version="2018.4.8.256" />
-    <!-- iText (AGPL-3.0) for PDF form handling, stamping and PAdES signing -->
-    <PackageReference Include="itext" Version="9.6.0" />
-    <PackageReference Include="itext.bouncy-castle-adapter" Version="9.6.0" />
+    <!-- miPDFlib (Apache-2.0) for form handling, text extraction, stamping, signing and LTV -->
+    <PackageReference Include="miPDFlib" Version="0.3.0" />
     <!-- BouncyCastle for custom CMS / PAdES signing with biometric signed attributes -->
     <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2" />
     <!-- App.config / appSettings support -->

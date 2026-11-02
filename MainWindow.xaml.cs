@@ -1543,16 +1543,13 @@ namespace miPDFsign
                         // Encrypt biometric data with the persistent biometric key (same as QES)
                         // so it stays decryptable — NOT with the ephemeral 10-minute signing key.
                         var bioKey = BiometricCertManager.GetEncryptionPublicKey();
-                        // SignFields returns the CMS bytes directly — avoids re-reading and
-                        // re-parsing the PDF (ExtractLastCmsBytes was fragile: it matched
-                        // wrong /Contents entries in PDFs with pre-existing page content streams).
-                        byte[] fesCms = await Task.Run(() => PdfCertSigner.SignFields(outPath, name, fields, certPair, bioKey));
+                        await Task.Run(() => PdfCertSigner.SignFields(outPath, name, fields, certPair, bioKey));
 
                         // PAdES-LT: embed DSS (self-signed cert has no CRL/OCSP, but
                         // TSA cert chain from signature-time-stamp is still embedded)
                         TbStatus.Text = UiLabels.StatusQesFetchingRevocation;
                         byte[] fesBytes = await Task.Run(() => File.ReadAllBytes(outPath));
-                        fesBytes        = await PdfCertSigner.AddLtv(fesBytes, fesCms);
+                        fesBytes        = await PdfCertSigner.AddLtv(fesBytes);
 
                         // PAdES-LTA: document-level archive timestamp
                         TbStatus.Text = UiLabels.StatusQesAddingArchive;
@@ -1610,11 +1607,11 @@ namespace miPDFsign
 
                         // Inject CMS into placeholder PDF
                         byte[] finalPdf = await Task.Run(() =>
-                            PdfCertSigner.InjectQesCms(placeholderPdf, cms));
+                            PdfCertSigner.InjectQesCms(placeholderPdf, req.FieldName, cms));
 
                         // Fetch CRL / OCSP and embed DSS (PAdES-LT)
                         TbStatus.Text = UiLabels.StatusQesFetchingRevocation;
-                        finalPdf = await PdfCertSigner.AddLtv(finalPdf, cms);
+                        finalPdf = await PdfCertSigner.AddLtv(finalPdf);
 
                         // Add document timestamp over the complete document incl. DSS (PAdES-LTA)
                         TbStatus.Text = UiLabels.StatusQesAddingArchive;
@@ -1879,8 +1876,8 @@ namespace miPDFsign
         //
         //  Produces per-stroke point lists in the signature appearance box:
         //  top-left origin, Y growing downwards, units = PDF points, range
-        //  [0..PdfW] × [0..PdfH]. These map 1:1 onto Syncfusion's appearance
-        //  graphics so PdfCertSigner can draw transparent vector ink.
+        //  [0..PdfW] × [0..PdfH]. PdfCertSigner draws them into the signature
+        //  appearance as transparent vector ink (miPDFlib InkRenderer).
         //
         //  box      = the canvas-space bounding rectangle the strokes were
         //             scaled against (already padding-inflated by the caller).

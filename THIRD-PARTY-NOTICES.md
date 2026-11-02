@@ -1,7 +1,7 @@
 # Third-Party Notices
 
-**miPDFsign Community** is licensed under the **GNU Affero General Public License v3.0**
-(AGPL-3.0, see [`LICENSE`](./LICENSE)). It uses and distributes the third-party components
+**miPDFsign Community** is licensed under the **Apache License 2.0**
+(see [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE)). It uses and distributes the third-party components
 listed below under their respective licenses. This file fulfills the associated
 attribution and redistribution obligations.
 

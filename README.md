@@ -4,9 +4,9 @@
 
 # miPDFsign Community
 
-[![GitHub release](https://img.shields.io/github/v/release/Mibuw/miPDFsign-Community)](https://github.com/Mibuw/miPDFsign-Community/releases/latest) [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE) [![winget](https://img.shields.io/winget/v/Mibuw.miPDFsignCommunity?label=winget)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/m/Mibuw/miPDFsignCommunity) [![Chocolatey](https://img.shields.io/chocolatey/v/mipdfsign-community?label=chocolatey)](https://community.chocolatey.org/packages/mipdfsign-community)
+[![GitHub release](https://img.shields.io/github/v/release/Mibuw/miPDFsign-Community)](https://github.com/Mibuw/miPDFsign-Community/releases/latest) [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE) [![winget](https://img.shields.io/winget/v/Mibuw.miPDFsignCommunity?label=winget)](https://github.com/microsoft/winget-pkgs/tree/master/manifests/m/Mibuw/miPDFsignCommunity) [![Chocolatey](https://img.shields.io/chocolatey/v/mipdfsign-community?label=chocolatey)](https://community.chocolatey.org/packages/mipdfsign-community)
 
-**miPDFsign Community** is the free, open-source (**AGPL-3.0**) edition of miPDFsign — a .NET 8 WPF application for signature tablets. It captures handwritten signatures together with biometric pressure data and embeds them as a **PAdES signature** into PDF documents. It uses the open-source PDF engine **[miPDFlib](https://github.com/Mibuw/miPDFlib)** (Apache-2.0).
+**miPDFsign Community** is the free, open-source (**Apache-2.0**) edition of miPDFsign — a .NET 8 WPF application for signature tablets. It captures handwritten signatures together with biometric pressure data and embeds them as a **PAdES signature** into PDF documents. It uses the open-source PDF engine **[miPDFlib](https://github.com/Mibuw/miPDFlib)** (Apache-2.0).
 
 ---
 
@@ -191,14 +191,17 @@ application to a PDF, then sign it here — a natural upstream **pre-stage**:
 ## License
 
 **miPDFsign Community is a free, open-source edition**, licensed under the
-**GNU Affero General Public License v3.0** (AGPL-3.0) — see [`LICENSE`](./LICENSE).
-If you distribute it (or offer it over a network), you must make the complete
-corresponding source available under the same license.
+**Apache License 2.0** — see [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE). You may use,
+modify and redistribute it, also commercially and in closed-source products, as long as
+you keep the license and notices.
+
+Versions up to and including **1.0.1** were released under the AGPL-3.0; from **1.1.0**
+on, miPDFsign Community is Apache-2.0.
 
 ### Commercial edition
 
-A **commercial edition of miPDFsign is available on request** — without AGPL
-obligations and with **additional features** (e.g. an inbound/outbound plugin
+A **commercial edition of miPDFsign is available on request** — with
+**additional features** (e.g. an inbound/outbound plugin
 architecture, archive/DMS connectors, system integrations, and priority support). It
 is a separate product. Please
 [get in touch](#author) for licensing, pricing, and a feature overview.

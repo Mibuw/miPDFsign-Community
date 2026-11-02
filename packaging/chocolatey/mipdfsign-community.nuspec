@@ -15,10 +15,10 @@
     <projectSourceUrl>https://github.com/Mibuw/miPDFsign-Community</projectSourceUrl>
     <docsUrl>https://github.com/Mibuw/miPDFsign-Community/blob/main/README.md</docsUrl>
     <bugTrackerUrl>https://github.com/Mibuw/miPDFsign-Community/issues</bugTrackerUrl>
-    <tags>pdf pdf-signing pades digital-signature electronic-signature biometric-signature qes id-austria signature tablet foss agpl</tags>
-    <summary>Free AGPL edition of miPDFsign: a tablet signature app that embeds handwritten signatures with biometric data as PAdES into PDFs.</summary>
+    <tags>pdf pdf-signing pades digital-signature electronic-signature biometric-signature qes id-austria signature tablet foss apache</tags>
+    <summary>Free open-source (Apache-2.0) edition of miPDFsign: a tablet signature app that embeds handwritten signatures with biometric data as PAdES into PDFs.</summary>
     <description>
-miPDFsign Community is the free, open-source (AGPL-3.0) edition of miPDFsign, a .NET 8 WPF
+miPDFsign Community is the free, open-source (Apache-2.0) edition of miPDFsign, a .NET 8 WPF
 application for signature tablets. It captures handwritten signatures together with biometric
 pressure data and embeds them as PAdES signatures (Baseline B/T/LT/LTA) into PDF documents,
 including QES via ID Austria. It uses the open-source PDF engine miPDFlib (Apache-2.0).

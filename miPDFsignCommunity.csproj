@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    miPDFsign Community – free/open-source edition (AGPL-3.0).
+    miPDFsign Community – free/open-source edition (Apache-2.0).
     PDF engine: miPDFlib (Apache-2.0). This is a separate product from the commercial miPDFsign.
   -->
   <PropertyGroup>
